@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useState, useCallback } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { apiClient } from "@/lib/api";
+import { useAuth } from "./AuthContext";
 
 export type ToolEvent = {
   id: string;
@@ -44,12 +46,16 @@ type ChatContextType = {
   chats: Chat[];
   activeChat: Chat | null;
   mode: Mode;
+  activeConnectionId: string | null;
+  connections: any[];
   setMode: (m: Mode) => void;
+  setActiveConnectionId: (id: string) => void;
   createChat: () => void;
   selectChat: (id: string) => void;
   sendMessage: (content: string) => void;
   deleteChat: (id: string) => void;
   renameChat: (id: string, title: string) => void;
+  loadConnections: () => Promise<void>;
 };
 
 const ChatContext = createContext<ChatContextType | null>(null);

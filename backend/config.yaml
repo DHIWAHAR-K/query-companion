@@ -1,0 +1,24 @@
+modes:
+  valtryek:
+    model: claude-haiku-3-5-20241022
+    max_schema_tables: 5
+    max_tool_calls: 1
+    force_limit: 100
+    timeout_seconds: 30
+    
+  achillies:
+    model: claude-sonnet-4-20250514
+    max_schema_tables: 15
+    max_tool_calls: 3
+    suggest_limit: 1000
+    timeout_seconds: 120
+    enable_self_check: true
+    
+  spryzen:
+    model: claude-opus-4-5-20251101
+    max_schema_tables: 30
+    max_tool_calls: 10
+    no_limit_restriction: true
+    timeout_seconds: 300
+    enable_multi_candidate: true
+    enable_explain_plan: true
