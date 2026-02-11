@@ -78,7 +78,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         <div className="flex-1" />
         <Avatar className="h-8 w-8 cursor-pointer" onClick={onToggle}>
           <AvatarFallback className="text-[11px] font-semibold bg-primary text-primary-foreground">
-            {user?.name?.slice(0, 2).toUpperCase() || "DA"}
+            {user?.full_name?.slice(0, 2).toUpperCase() || "DA"}
           </AvatarFallback>
         </Avatar>
       </div>
@@ -141,10 +141,10 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         <div className="flex items-center gap-2">
           <Avatar className="h-8 w-8">
             <AvatarFallback className="text-[11px] font-semibold bg-primary text-primary-foreground">
-              {user?.name?.slice(0, 2).toUpperCase() || "DA"}
+              {user?.full_name?.slice(0, 2).toUpperCase() || "DA"}
             </AvatarFallback>
           </Avatar>
-          <span className="flex-1 truncate text-sm text-sidebar-foreground">{user?.name}</span>
+          <span className="flex-1 truncate text-sm text-sidebar-foreground">{user?.full_name}</span>
           <button onClick={logout} className={cn(iconBtn, "h-7 w-7")}>
             <LogOut className="h-3.5 w-3.5" />
           </button>
