@@ -49,7 +49,7 @@ export default function ChatPane() {
           {/* Greeting */}
           <h1 className="text-3xl font-medium text-foreground mb-8">
             <span className="mr-2">✸</span>
-            {getGreeting()}, {user?.name?.split(" ")[0] || "there"}
+            {getGreeting()}, {user?.full_name?.split(" ")[0] || "there"}
           </h1>
 
           {/* Input area */}

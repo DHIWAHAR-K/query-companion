@@ -30,6 +30,7 @@ export type Message = {
   toolEvents?: ToolEvent[];
   sql?: SQLBlock;
   results?: QueryResult;
+  isStreaming?: boolean;
 };
 
 export type Chat = {
@@ -46,6 +47,7 @@ type ChatContextType = {
   chats: Chat[];
   activeChat: Chat | null;
   mode: Mode;
+  isLoading: boolean;
   activeConnectionId: string | null;
   connections: any[];
   setMode: (m: Mode) => void;
@@ -60,83 +62,17 @@ type ChatContextType = {
 
 const ChatContext = createContext<ChatContextType | null>(null);
 
-// Mock assistant responses
-const mockResponses: { content: string; sql?: SQLBlock; toolEvents?: ToolEvent[]; results?: QueryResult }[] = [
-  {
-    content: "I found the data you're looking for. Here's a query to get the total sales by region for the last quarter:",
-    toolEvents: [
-      { id: "1", label: "Searched schema: sales_data", icon: "🔍", durationMs: 1200 },
-      { id: "2", label: "Analyzed table structure", icon: "📊", durationMs: 800 },
-    ],
-    sql: {
-      query: `SELECT \n  r.region_name,\n  SUM(o.total_amount) AS total_sales,\n  COUNT(o.id) AS order_count,\n  AVG(o.total_amount) AS avg_order_value\nFROM orders o\nJOIN regions r ON o.region_id = r.id\nWHERE o.created_at >= NOW() - INTERVAL '3 months'\nGROUP BY r.region_name\nORDER BY total_sales DESC;`,
-      dialect: "PostgreSQL",
-    },
-    results: {
-      columns: [
-        { name: "region_name", type: "text" },
-        { name: "total_sales", type: "numeric" },
-        { name: "order_count", type: "integer" },
-        { name: "avg_order_value", type: "numeric" },
-      ],
-      rows: [
-        ["North America", 1245890.5, 3421, 364.19],
-        ["Europe", 987654.32, 2876, 343.41],
-        ["Asia Pacific", 756123.45, 2134, 354.33],
-        ["Latin America", 432567.89, 1245, 347.44],
-        ["Middle East", 234567.12, 876, 267.77],
-      ],
-      totalRows: 5,
-      executionTimeMs: 142,
-    },
-  },
-  {
-    content: "Here's the user activity breakdown you requested. The query analyzes daily active users over the past week:",
-    toolEvents: [
-      { id: "1", label: "Fetched schema: analytics", icon: "🔍", durationMs: 950 },
-    ],
-    sql: {
-      query: `SELECT \n  DATE(event_timestamp) AS activity_date,\n  COUNT(DISTINCT user_id) AS daily_active_users,\n  COUNT(*) AS total_events\nFROM user_events\nWHERE event_timestamp >= CURRENT_DATE - INTERVAL '7 days'\nGROUP BY DATE(event_timestamp)\nORDER BY activity_date;`,
-      dialect: "PostgreSQL",
-    },
-    results: {
-      columns: [
-        { name: "activity_date", type: "date" },
-        { name: "daily_active_users", type: "integer" },
-        { name: "total_events", type: "integer" },
-      ],
-      rows: [
-        ["2026-02-03", 1245, 15678],
-        ["2026-02-04", 1312, 16432],
-        ["2026-02-05", 1189, 14567],
-        ["2026-02-06", 1456, 18234],
-        ["2026-02-07", 1523, 19012],
-        ["2026-02-08", 987, 12345],
-        ["2026-02-09", 1034, 13456],
-      ],
-      totalRows: 7,
-      executionTimeMs: 89,
-    },
-  },
-  {
-    content: "I can help with that! Let me look into the database structure for you.",
-    toolEvents: [
-      { id: "1", label: "Exploring database schema", icon: "🗄️", durationMs: 600 },
-    ],
-  },
-];
-
-let responseIndex = 0;
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("achillies");
+  const [isLoading, setIsLoading] = useState(false);
   const [activeConnectionId, setActiveConnectionId] = useState<string | null>(null);
   const [connections, setConnections] = useState<any[]>([]);
 
-  // Load connections when authenticated
   useEffect(() => {
     if (isAuthenticated) {
       loadConnections();
@@ -152,22 +88,24 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         setActiveConnectionId(conns[0].id);
       }
     } catch (error) {
-      console.error('Failed to load connections:', error);
+      console.error("Failed to load connections:", error);
     }
   };
 
   const loadConversations = async () => {
     try {
       const conversations = await apiClient.getConversations();
-      setChats(conversations.map((conv: any) => ({
-        id: conv.id,
-        title: conv.title,
-        messages: conv.messages,
-        createdAt: new Date(conv.created_at),
-        updatedAt: new Date(conv.updated_at),
-      })));
+      setChats(
+        conversations.map((conv: any) => ({
+          id: conv.id,
+          title: conv.title,
+          messages: conv.messages || [],
+          createdAt: new Date(conv.created_at),
+          updatedAt: new Date(conv.updated_at),
+        }))
+      );
     } catch (error) {
-      console.error('Failed to load conversations:', error);
+      console.error("Failed to load conversations:", error);
     }
   };
 
@@ -189,115 +127,186 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setActiveChatId(id);
   }, []);
 
-  const sendMessage = useCallback(async (content: string) => {
-    if (!activeConnectionId) {
-      console.error('No active connection');
-      return;
-    }
+  const sendMessage = useCallback(
+    async (content: string) => {
+      let chatId = activeChatId;
 
-    let chatId = activeChatId;
-    
-    // Create new chat if needed
-    if (!chatId) {
-      chatId = crypto.randomUUID();
-      const newChat: Chat = {
-        id: chatId,
-        title: content.slice(0, 40) + (content.length > 40 ? "..." : ""),
-        messages: [],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      setChats((prev) => [newChat, ...prev]);
-      setActiveChatId(chatId);
-    }
+      if (!chatId) {
+        const newChat: Chat = {
+          id: crypto.randomUUID(),
+          title: content.slice(0, 40) + (content.length > 40 ? "..." : ""),
+          messages: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        chatId = newChat.id;
+        setChats((prev) => [newChat, ...prev]);
+        setActiveChatId(chatId);
+      }
 
-    // Add user message immediately
-    const userMsg: Message = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content,
-      timestamp: new Date(),
-    };
-
-    setChats((prev) =>
-      prev.map((c) =>
-        c.id === chatId
-          ? {
-              ...c,
-              messages: [...c.messages, userMsg],
-              updatedAt: new Date(),
-            }
-          : c
-      )
-    );
-
-    try {
-      // Call backend API
-      const response = await apiClient.sendMessage({
-        conversation_id: chatId,
-        message: {
-          id: userMsg.id,
-          role: userMsg.role,
-          content: userMsg.content,
-          timestamp: userMsg.timestamp.toISOString(),
-        },
-        connection_id: activeConnectionId,
-        mode,
-        execute_sql: true,
-        stream: false,
-      });
-
-      // Add assistant message
-      const assistantMsg: Message = {
-        id: response.message.id,
-        role: "assistant",
-        content: response.message.content,
-        timestamp: new Date(response.message.timestamp),
-        toolEvents: response.message.tool_events,
-        sql: response.message.sql,
-        results: response.message.results,
-      };
-
-      setChats((prev) =>
-        prev.map((c) =>
-          c.id === chatId
-            ? {
-                ...c,
-                messages: [...c.messages, assistantMsg],
-                updatedAt: new Date(),
-              }
-            : c
-        )
-      );
-    } catch (error: any) {
-      console.error('Failed to send message:', error);
-      
-      // Add error message
-      const errorMsg: Message = {
+      const userMsg: Message = {
         id: crypto.randomUUID(),
-        role: "system",
-        content: `Error: ${error.message || 'Failed to send message'}`,
+        role: "user",
+        content,
         timestamp: new Date(),
       };
 
+      const assistantMsgId = crypto.randomUUID();
+      const assistantMsg: Message = {
+        id: assistantMsgId,
+        role: "assistant",
+        content: "",
+        timestamp: new Date(),
+        isStreaming: true,
+      };
+
+      const targetChatId = chatId;
       setChats((prev) =>
         prev.map((c) =>
-          c.id === chatId
+          c.id === targetChatId
             ? {
                 ...c,
-                messages: [...c.messages, errorMsg],
+                messages: [...c.messages, userMsg, assistantMsg],
+                title:
+                  c.messages.length === 0
+                    ? content.slice(0, 40) + (content.length > 40 ? "..." : "")
+                    : c.title,
                 updatedAt: new Date(),
               }
             : c
         )
       );
-    }
-  }, [activeChatId, activeConnectionId, mode]);
 
-  const deleteChat = useCallback((id: string) => {
-    setChats((prev) => prev.filter((c) => c.id !== id));
-    if (activeChatId === id) setActiveChatId(null);
-  }, [activeChatId]);
+      setIsLoading(true);
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/v1/chat/message/stream`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("access_token") || ""}`,
+          },
+          body: JSON.stringify({
+            conversation_id: targetChatId,
+            message: {
+              id: userMsg.id,
+              role: "user",
+              content,
+              timestamp: userMsg.timestamp.toISOString(),
+            },
+            connection_id: activeConnectionId || "",
+            mode,
+            execute_sql: false,
+            stream: true,
+          }),
+        });
+
+        if (!response.ok || !response.body) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let textBuffer = "";
+        let fullContent = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          textBuffer += decoder.decode(value, { stream: true });
+
+          let newlineIndex: number;
+          while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
+            let line = textBuffer.slice(0, newlineIndex);
+            textBuffer = textBuffer.slice(newlineIndex + 1);
+
+            if (line.endsWith("\r")) line = line.slice(0, -1);
+            if (line.startsWith(":") || line.trim() === "") continue;
+            if (!line.startsWith("data: ")) continue;
+
+            const jsonStr = line.slice(6).trim();
+            if (jsonStr === "[DONE]") break;
+
+            try {
+              const parsed = JSON.parse(jsonStr);
+
+              if (parsed.type === "content" || parsed.type === "token") {
+                fullContent += parsed.content || parsed.token || "";
+              } else if (parsed.type === "done") {
+                // done
+              } else if (parsed.choices?.[0]?.delta?.content) {
+                fullContent += parsed.choices[0].delta.content;
+              } else if (typeof parsed.content === "string") {
+                fullContent += parsed.content;
+              }
+
+              setChats((prev) =>
+                prev.map((c) =>
+                  c.id === targetChatId
+                    ? {
+                        ...c,
+                        messages: c.messages.map((m) =>
+                          m.id === assistantMsgId ? { ...m, content: fullContent } : m
+                        ),
+                      }
+                    : c
+                )
+              );
+            } catch {
+              textBuffer = line + "\n" + textBuffer;
+              break;
+            }
+          }
+        }
+
+        setChats((prev) =>
+          prev.map((c) =>
+            c.id === targetChatId
+              ? {
+                  ...c,
+                  messages: c.messages.map((m) =>
+                    m.id === assistantMsgId
+                      ? { ...m, isStreaming: false, content: fullContent || "I couldn't generate a response." }
+                      : m
+                  ),
+                }
+              : c
+          )
+        );
+      } catch (error) {
+        console.error("Streaming error:", error);
+        setChats((prev) =>
+          prev.map((c) =>
+            c.id === targetChatId
+              ? {
+                  ...c,
+                  messages: c.messages.map((m) =>
+                    m.id === assistantMsgId
+                      ? {
+                          ...m,
+                          isStreaming: false,
+                          content: "Sorry, I couldn't connect to the server. Please check your backend is running.",
+                        }
+                      : m
+                  ),
+                }
+              : c
+          )
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [activeChatId, mode, activeConnectionId]
+  );
+
+  const deleteChat = useCallback(
+    (id: string) => {
+      setChats((prev) => prev.filter((c) => c.id !== id));
+      if (activeChatId === id) setActiveChatId(null);
+    },
+    [activeChatId]
+  );
 
   const renameChat = useCallback((id: string, title: string) => {
     setChats((prev) => prev.map((c) => (c.id === id ? { ...c, title } : c)));
@@ -305,20 +314,21 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <ChatContext.Provider
-      value={{ 
-        chats, 
-        activeChat, 
-        mode, 
+      value={{
+        chats,
+        activeChat,
+        mode,
+        isLoading,
         activeConnectionId,
         connections,
-        setMode, 
+        setMode,
         setActiveConnectionId,
-        createChat, 
-        selectChat, 
-        sendMessage, 
-        deleteChat, 
+        createChat,
+        selectChat,
+        sendMessage,
+        deleteChat,
         renameChat,
-        loadConnections 
+        loadConnections,
       }}
     >
       {children}
