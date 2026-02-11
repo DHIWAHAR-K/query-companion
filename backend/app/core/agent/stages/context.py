@@ -100,7 +100,7 @@ async def assemble_context(
     context = Context(
         user_id=connection.user_id,
         language=language,
-        schema=schema,
+        db_schema=schema,
         tables=table_names,
         conversation_history=conversation_history[-5:]  # Last 5 messages for context
     )

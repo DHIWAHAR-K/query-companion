@@ -1,11 +1,11 @@
 """Stage 5: SQL Generation"""
-from anthropic import AsyncAnthropic
 import structlog
 from typing import Dict, Any
 
 from app.models.domain import (
     Context, SQLArtifact, SQLDialect, PerformanceMode
 )
+from app.services.llm_service import LLMService
 from app.config import settings
 
 logger = structlog.get_logger()
@@ -53,7 +53,7 @@ def _build_user_prompt(user_message: str, context: Context, image_context: Any =
     
     # Format schema information
     schema_text = "Available tables:\n\n"
-    for table in context.schema.tables:
+    for table in context.db_schema.tables:
         schema_text += f"Table: {table['name']}\n"
         schema_text += "Columns:\n"
         for col in table['columns']:
@@ -63,9 +63,9 @@ def _build_user_prompt(user_message: str, context: Context, image_context: Any =
         schema_text += "\n"
     
     # Add relationships if any
-    if context.schema.relationships:
+    if context.db_schema.relationships:
         schema_text += "Relationships:\n"
-        for rel in context.schema.relationships:
+        for rel in context.db_schema.relationships:
             schema_text += f"  - {rel['from_table']}.{rel['from_column']} -> {rel['to_table']}.{rel['to_column']} ({rel['type']})\n"
         schema_text += "\n"
     
@@ -98,7 +98,7 @@ async def generate_sql(
     tool_results: Dict[str, Any],
     dialect: SQLDialect,
     mode: PerformanceMode,
-    client: AsyncAnthropic,
+    llm_service: LLMService,
     model: str,
     image_context: Any = None
 ) -> SQLArtifact:
@@ -123,18 +123,13 @@ async def generate_sql(
     user_prompt = _build_user_prompt(user_message, context, image_context)
     
     try:
-        # Call Claude API
-        response = await client.messages.create(
+        # Call LLM API (Claude or Gemini)
+        content = await llm_service.generate_sql(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
             model=model,
-            max_tokens=2048,
-            system=system_prompt,
-            messages=[
-                {"role": "user", "content": user_prompt}
-            ]
+            max_tokens=2048
         )
-        
-        # Parse response
-        content = response.content[0].text
         
         # Extract SQL query
         sql_query = ""

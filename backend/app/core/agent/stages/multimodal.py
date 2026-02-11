@@ -1,7 +1,6 @@
 """Stage 3: Multimodal Ingestion"""
 from typing import List, Optional
 import structlog
-from anthropic import AsyncAnthropic
 
 from app.core.tools.vision import extract_from_images, ImageContext
 
@@ -10,7 +9,7 @@ logger = structlog.get_logger()
 
 async def process_attachments(
     attachments: Optional[List[bytes]],
-    client: AsyncAnthropic
+    client  # LLMService
 ) -> Optional[ImageContext]:
     """
     Process image attachments to extract SQL-relevant context.

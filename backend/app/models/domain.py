@@ -142,6 +142,6 @@ class Context(BaseModel):
     """Request context for agent runtime"""
     user_id: str
     language: Language
-    schema: Schema
+    db_schema: Schema
     tables: List[str]
     conversation_history: List[Message] = []

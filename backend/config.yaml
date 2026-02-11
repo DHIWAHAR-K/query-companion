@@ -1,13 +1,21 @@
 modes:
   valtryek:
-    model: claude-haiku-3-5-20241022
+    # Claude
+    anthropic_model: claude-haiku-3-5-20241022
+    # Google
+    google_model: gemini-1.5-flash
+    # Config
     max_schema_tables: 5
     max_tool_calls: 1
     force_limit: 100
     timeout_seconds: 30
     
   achillies:
-    model: claude-sonnet-4-20250514
+    # Claude
+    anthropic_model: claude-sonnet-4-20250514
+    # Google
+    google_model: gemini-1.5-pro
+    # Config
     max_schema_tables: 15
     max_tool_calls: 3
     suggest_limit: 1000
@@ -15,7 +23,11 @@ modes:
     enable_self_check: true
     
   spryzen:
-    model: claude-opus-4-5-20251101
+    # Claude
+    anthropic_model: claude-opus-4-5-20251101
+    # Google
+    google_model: gemini-1.5-pro
+    # Config
     max_schema_tables: 30
     max_tool_calls: 10
     no_limit_restriction: true

@@ -129,31 +129,47 @@ const mockResponses: { content: string; sql?: SQLBlock; toolEvents?: ToolEvent[]
 let responseIndex = 0;
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
-  const [chats, setChats] = useState<Chat[]>([
-    {
-      id: "demo-1",
-      title: "Sales by region analysis",
-      messages: [],
-      createdAt: new Date(Date.now() - 3600000),
-      updatedAt: new Date(Date.now() - 3600000),
-    },
-    {
-      id: "demo-2",
-      title: "User activity metrics",
-      messages: [],
-      createdAt: new Date(Date.now() - 86400000),
-      updatedAt: new Date(Date.now() - 86400000),
-    },
-    {
-      id: "demo-3",
-      title: "Revenue forecasting query",
-      messages: [],
-      createdAt: new Date(Date.now() - 86400000 * 3),
-      updatedAt: new Date(Date.now() - 86400000 * 3),
-    },
-  ]);
+  const { isAuthenticated } = useAuth();
+  const [chats, setChats] = useState<Chat[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("achillies");
+  const [activeConnectionId, setActiveConnectionId] = useState<string | null>(null);
+  const [connections, setConnections] = useState<any[]>([]);
+
+  // Load connections when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadConnections();
+      loadConversations();
+    }
+  }, [isAuthenticated]);
+
+  const loadConnections = async () => {
+    try {
+      const conns = await apiClient.getConnections();
+      setConnections(conns);
+      if (conns.length > 0 && !activeConnectionId) {
+        setActiveConnectionId(conns[0].id);
+      }
+    } catch (error) {
+      console.error('Failed to load connections:', error);
+    }
+  };
+
+  const loadConversations = async () => {
+    try {
+      const conversations = await apiClient.getConversations();
+      setChats(conversations.map((conv: any) => ({
+        id: conv.id,
+        title: conv.title,
+        messages: conv.messages,
+        createdAt: new Date(conv.created_at),
+        updatedAt: new Date(conv.updated_at),
+      })));
+    } catch (error) {
+      console.error('Failed to load conversations:', error);
+    }
+  };
 
   const activeChat = chats.find((c) => c.id === activeChatId) || null;
 
@@ -173,56 +189,110 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setActiveChatId(id);
   }, []);
 
-  const sendMessage = useCallback((content: string) => {
-    setChats((prev) => {
-      let chatId = activeChatId;
-      let updated = [...prev];
+  const sendMessage = useCallback(async (content: string) => {
+    if (!activeConnectionId) {
+      console.error('No active connection');
+      return;
+    }
 
-      if (!chatId) {
-        const newChat: Chat = {
-          id: crypto.randomUUID(),
-          title: content.slice(0, 40) + (content.length > 40 ? "..." : ""),
-          messages: [],
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-        updated = [newChat, ...updated];
-        chatId = newChat.id;
-        setTimeout(() => setActiveChatId(chatId), 0);
-      }
-
-      const userMsg: Message = {
-        id: crypto.randomUUID(),
-        role: "user",
-        content,
-        timestamp: new Date(),
+    let chatId = activeChatId;
+    
+    // Create new chat if needed
+    if (!chatId) {
+      chatId = crypto.randomUUID();
+      const newChat: Chat = {
+        id: chatId,
+        title: content.slice(0, 40) + (content.length > 40 ? "..." : ""),
+        messages: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
       };
+      setChats((prev) => [newChat, ...prev]);
+      setActiveChatId(chatId);
+    }
 
-      const mockResp = mockResponses[responseIndex % mockResponses.length];
-      responseIndex++;
+    // Add user message immediately
+    const userMsg: Message = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content,
+      timestamp: new Date(),
+    };
 
-      const assistantMsg: Message = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: mockResp.content,
-        timestamp: new Date(),
-        toolEvents: mockResp.toolEvents,
-        sql: mockResp.sql,
-        results: mockResp.results,
-      };
-
-      return updated.map((c) =>
+    setChats((prev) =>
+      prev.map((c) =>
         c.id === chatId
           ? {
               ...c,
-              messages: [...c.messages, userMsg, assistantMsg],
-              title: c.messages.length === 0 ? content.slice(0, 40) + (content.length > 40 ? "..." : "") : c.title,
+              messages: [...c.messages, userMsg],
               updatedAt: new Date(),
             }
           : c
+      )
+    );
+
+    try {
+      // Call backend API
+      const response = await apiClient.sendMessage({
+        conversation_id: chatId,
+        message: {
+          id: userMsg.id,
+          role: userMsg.role,
+          content: userMsg.content,
+          timestamp: userMsg.timestamp.toISOString(),
+        },
+        connection_id: activeConnectionId,
+        mode,
+        execute_sql: true,
+        stream: false,
+      });
+
+      // Add assistant message
+      const assistantMsg: Message = {
+        id: response.message.id,
+        role: "assistant",
+        content: response.message.content,
+        timestamp: new Date(response.message.timestamp),
+        toolEvents: response.message.tool_events,
+        sql: response.message.sql,
+        results: response.message.results,
+      };
+
+      setChats((prev) =>
+        prev.map((c) =>
+          c.id === chatId
+            ? {
+                ...c,
+                messages: [...c.messages, assistantMsg],
+                updatedAt: new Date(),
+              }
+            : c
+        )
       );
-    });
-  }, [activeChatId]);
+    } catch (error: any) {
+      console.error('Failed to send message:', error);
+      
+      // Add error message
+      const errorMsg: Message = {
+        id: crypto.randomUUID(),
+        role: "system",
+        content: `Error: ${error.message || 'Failed to send message'}`,
+        timestamp: new Date(),
+      };
+
+      setChats((prev) =>
+        prev.map((c) =>
+          c.id === chatId
+            ? {
+                ...c,
+                messages: [...c.messages, errorMsg],
+                updatedAt: new Date(),
+              }
+            : c
+        )
+      );
+    }
+  }, [activeChatId, activeConnectionId, mode]);
 
   const deleteChat = useCallback((id: string) => {
     setChats((prev) => prev.filter((c) => c.id !== id));
@@ -235,7 +305,21 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <ChatContext.Provider
-      value={{ chats, activeChat, mode, setMode, createChat, selectChat, sendMessage, deleteChat, renameChat }}
+      value={{ 
+        chats, 
+        activeChat, 
+        mode, 
+        activeConnectionId,
+        connections,
+        setMode, 
+        setActiveConnectionId,
+        createChat, 
+        selectChat, 
+        sendMessage, 
+        deleteChat, 
+        renameChat,
+        loadConnections 
+      }}
     >
       {children}
     </ChatContext.Provider>

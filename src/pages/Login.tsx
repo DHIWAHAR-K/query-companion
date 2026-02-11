@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,7 +7,15 @@ import { Label } from "@/components/ui/label";
 import { Database } from "lucide-react";
 
 export default function Login() {
-  const { login, signup } = useAuth();
+  const navigate = useNavigate();
+  const { login, signup, isAuthenticated, isLoading } = useAuth();
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      navigate("/", { replace: true });
+    }
+  }, [isAuthenticated, isLoading, navigate]);
   const [isSignup, setIsSignup] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,10 +31,25 @@ export default function Login() {
       } else {
         await login(email, password);
       }
+      // Navigate to home page after successful authentication
+      navigate("/");
+    } catch (error: any) {
+      alert(error.message || 'Authentication failed');
     } finally {
       setLoading(false);
     }
   };
+
+  // Show loading while checking authentication
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-surface">
+        <div className="text-center">
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-surface">

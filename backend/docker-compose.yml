@@ -47,8 +47,12 @@ services:
       # Security (CHANGE IN PRODUCTION!)
       SECRET_KEY: dev-secret-key-change-in-production
       ENCRYPTION_KEY: dev-encryption-key-change-in-production
-      # LLM
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      # LLM Provider
+      LLM_PROVIDER: ${LLM_PROVIDER:-google}
+      # Anthropic
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Google
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
       # Tools
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
       ENABLE_WEB_SEARCH: ${ENABLE_WEB_SEARCH:-true}

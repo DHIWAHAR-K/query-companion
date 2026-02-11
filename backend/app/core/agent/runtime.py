@@ -1,7 +1,6 @@
 """Agent Runtime - Main orchestrator for the SQL generation pipeline"""
 from typing import List, Dict, Any, Optional, AsyncGenerator
 import structlog
-from anthropic import AsyncAnthropic
 
 from app.models.domain import (
     Message, PerformanceMode, AssistantMessage
@@ -17,6 +16,7 @@ from app.core.agent.stages import (
     validate_sql,
     compose_response
 )
+from app.services.llm_service import LLMService
 from app.config import settings
 
 logger = structlog.get_logger()
@@ -38,17 +38,8 @@ class AgentRuntime:
     
     def __init__(self, mode: PerformanceMode):
         self.mode = mode
-        self.client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-        self.model = self._get_model_for_mode(mode)
-        
-    def _get_model_for_mode(self, mode: PerformanceMode) -> str:
-        """Get Claude model name for the specified mode"""
-        mapping = {
-            PerformanceMode.VALTRYEK: settings.VALTRYEK_MODEL,
-            PerformanceMode.ACHILLIES: settings.ACHILLIES_MODEL,
-            PerformanceMode.SPRYZEN: settings.SPRYZEN_MODEL,
-        }
-        return mapping[mode]
+        self.llm_service = LLMService()
+        self.model = self.llm_service.get_model_name(mode.value)
     
     async def process_request(
         self,
@@ -96,16 +87,16 @@ class AgentRuntime:
             # Stage 3: Multimodal ingestion (if images attached)
             image_context = None
             if attachments:
-                image_context = await process_attachments(attachments, self.client)
+                image_context = await process_attachments(attachments, self.llm_service)
                 logger.debug("Image context extracted", entities=len(image_context.entities) if image_context else 0)
             
             # Stage 4: Tool planning and execution
-            # Use Claude's native tool use for intelligent tool selection
+            # Use LLM's tool use for intelligent tool selection
             tool_results, tool_events = await execute_tools_with_claude(
                 user_message=user_message,
                 context=context,
                 mode=self.mode,
-                client=self.client,
+                client=self.llm_service,
                 model=self.model
             )
             
@@ -128,7 +119,7 @@ class AgentRuntime:
             # Stage 6: Validation
             validation_result = validate_sql(
                 sql=sql_generation.query,
-                schema=context.schema,
+                schema=context.db_schema,
                 dialect=connection.type
             )
             logger.debug("Validation complete", status=validation_result.status)
@@ -279,7 +270,7 @@ class AgentRuntime:
                 user_message=user_message,
                 context=context,
                 mode=self.mode,
-                client=self.client,
+                client=self.llm_service,
                 model=self.model
             )
             
@@ -300,7 +291,7 @@ class AgentRuntime:
                 tool_results=tool_results,
                 dialect=connection.type,
                 mode=self.mode,
-                client=self.client,
+                llm_service=self.llm_service,
                 model=self.model
             )
             yield {
@@ -314,7 +305,7 @@ class AgentRuntime:
             yield {"type": "stage_start", "stage": "validation"}
             validation_result = validate_sql(
                 sql=sql_generation.query,
-                schema=context.schema,
+                schema=context.db_schema,
                 dialect=connection.type
             )
             yield {

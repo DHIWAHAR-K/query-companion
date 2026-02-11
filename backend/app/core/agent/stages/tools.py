@@ -118,13 +118,13 @@ async def execute_tools_with_claude(
     user_message: str,
     context: Context,
     mode: PerformanceMode,
-    client: AsyncAnthropic,
+    client,  # LLMService
     model: str
 ) -> Tuple[Dict[str, Any], List[ToolEvent]]:
     """
-    Execute tools using Claude's native tool use capability.
+    Execute tools using LLM's native tool use capability.
     
-    This is a more advanced version that lets Claude decide which tools to use.
+    This version lets the LLM decide which tools to use.
     
     Args:
         user_message: User's query
@@ -136,10 +136,10 @@ async def execute_tools_with_claude(
     Returns:
         Tuple of (tool_results, tool_events)
     """
-    if not settings.ENABLE_WEB_SEARCH or not settings.TAVILY_API_KEY:
+    if not settings.ENABLE_WEB_SEARCH:
         return {}, []
     
-    logger.info("Using Claude tool use for tool planning")
+    logger.info("Using LLM tool use for tool planning")
     
     tool_results = {}
     tool_events = []
@@ -154,45 +154,44 @@ Database schema: {schema_summary}
 
 Only use web_search if the user's question references terms, metrics, or concepts that are NOT in the database schema and require external knowledge to understand."""
 
-        # Call Claude with tools
-        response = await client.messages.create(
+        user_prompt = f"User question: {user_message}\n\nDo you need to search for any external information to help answer this?"
+        
+        # Call LLM with tools
+        response_text, tool_calls = await client.generate_with_tools(
+            system_prompt=system,
+            user_prompt=user_prompt,
             model=model,
-            max_tokens=1024,
-            system=system,
             tools=[WEB_SEARCH_TOOL],
-            messages=[
-                {"role": "user", "content": f"User question: {user_message}\n\nDo you need to search for any external information to help answer this?"}
-            ]
+            max_tokens=1024
         )
         
-        # Process tool uses
-        for content_block in response.content:
-            if content_block.type == "tool_use":
-                tool_name = content_block.name
-                tool_input = content_block.input
-                
-                if tool_name == "web_search":
-                    logger.info("Claude requested web search", query=tool_input.get("query"))
-                    start_time = time.time()
-                    
-                    result = await search_web(tool_input["query"])
-                    duration_ms = int((time.time() - start_time) * 1000)
-                    
-                    tool_results["web_search"] = result
-                    
-                    event = ToolEvent(
-                        id=str(uuid.uuid4()),
-                        tool="web_search",
-                        label=f"Searched: {tool_input['query'][:50]}",
-                        icon="🔍",
-                        input=tool_input,
-                        output={"result_count": len(result.get("results", []))},
-                        duration_ms=duration_ms,
-                        timestamp=datetime.utcnow()
-                    )
-                    
-                    tool_events.append(event)
-        
+        # Process tool calls
+        for tool_call in tool_calls:
+            tool_name = tool_call["name"]
+            tool_input = tool_call["input"]
+
+            if tool_name == "web_search":
+                logger.info("Claude requested web search", query=tool_input.get("query"))
+                start_time = time.time()
+
+                result = await search_web(tool_input["query"])
+                duration_ms = int((time.time() - start_time) * 1000)
+
+                tool_results["web_search"] = result
+
+                event = ToolEvent(
+                    id=str(uuid.uuid4()),
+                    tool="web_search",
+                    label=f"Searched: {tool_input['query'][:50]}",
+                    icon="🔍",
+                    input=tool_input,
+                    output={"result_count": len(result.get("results", []))},
+                    duration_ms=duration_ms,
+                    timestamp=datetime.utcnow()
+                )
+
+                tool_events.append(event)
+
     except Exception as e:
         logger.error("Claude tool use failed", error=str(e))
     

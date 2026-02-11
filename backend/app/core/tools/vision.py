@@ -1,5 +1,4 @@
 """Vision tool for extracting SQL context from images"""
-from anthropic import AsyncAnthropic
 import structlog
 from typing import List, Dict, Any
 import base64
@@ -30,7 +29,7 @@ class ImageContext:
 
 async def extract_from_images(
     images: List[bytes],
-    client: AsyncAnthropic
+    client  # LLMService
 ) -> ImageContext:
     """
     Extract SQL-relevant context from images using Claude vision.
@@ -55,24 +54,6 @@ async def extract_from_images(
     logger.info("Extracting context from images", image_count=len(images))
     
     try:
-        # Prepare image content for Claude
-        image_contents = []
-        for image_data in images:
-            # Assume images are already base64 encoded strings or bytes
-            if isinstance(image_data, bytes):
-                image_b64 = base64.b64encode(image_data).decode('utf-8')
-            else:
-                image_b64 = image_data
-            
-            image_contents.append({
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": "image/png",  # Could be detected
-                    "data": image_b64
-                }
-            })
-        
         # Build prompt for extraction
         prompt = """Analyze this image and extract SQL-relevant information.
 
@@ -108,19 +89,16 @@ DESCRIPTION:
 [Brief description of what you see]
 """
         
-        # Call Claude vision API
-        message_content = image_contents + [{"type": "text", "text": prompt}]
+        # Use first image for simplicity (could process multiple)
+        image_data = images[0]
         
-        response = await client.messages.create(
-            model=settings.ACHILLIES_MODEL,  # Use Sonnet for vision
-            max_tokens=2048,
-            messages=[
-                {"role": "user", "content": message_content}
-            ]
+        # Call LLM vision API
+        model = client.get_model_name("achillies")  # Use balanced model for vision
+        content = await client.extract_from_image(
+            image_data=image_data,
+            prompt=prompt,
+            model=model
         )
-        
-        # Parse response
-        content = response.content[0].text
         logger.debug("Vision response received", length=len(content))
         
         # Extract structured data from response
