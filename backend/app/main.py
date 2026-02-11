@@ -20,15 +20,20 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Queryus API", version=settings.VERSION)
     
-    # Initialize DB connection pool
+    # Initialize PostgreSQL connection pool
     from app.db.session import engine
     async with engine.begin() as conn:
-        logger.info("Database connection established")
+        logger.info("PostgreSQL connection established")
     
     # Test Redis connection
     from app.db.cache import redis_client
     await redis_client.ping()
     logger.info("Redis connected")
+    
+    # Connect to MongoDB
+    from app.db.mongo import mongo_db
+    await mongo_db.connect()
+    logger.info("MongoDB connected")
     
     yield
     
@@ -36,6 +41,7 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down Queryus API")
     await engine.dispose()
     await redis_client.close()
+    await mongo_db.close()
 
 
 app = FastAPI(

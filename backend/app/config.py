@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str
     SCHEMA_CACHE_TTL: int = 3600  # 1 hour
+    
+    # MongoDB
+    MONGODB_URL: str = "mongodb://localhost:27017"
+    MONGODB_DB_NAME: str = "queryus_chat"
 
     # LLM Provider Selection
     LLM_PROVIDER: str = "google"  # "anthropic" or "google"

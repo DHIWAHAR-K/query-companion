@@ -20,8 +20,11 @@ cd backend
 conda env create -f environment.yml
 conda activate queryus
 
-# 2. Setup services (PostgreSQL + Redis)
-# Option A: Install locally (brew install postgresql redis)
+# 2. Setup services (PostgreSQL + Redis + MongoDB)
+# Option A: Install locally
+brew install postgresql redis mongodb-community
+brew services start postgresql redis mongodb-community
+
 # Option B: Use Docker (see CONDA_SETUP.md)
 
 # 3. Run migrations
@@ -29,6 +32,11 @@ alembic upgrade head
 
 # 4. Start backend
 uvicorn app.main:app --reload --port 8000
+
+# Should see:
+# ✅ PostgreSQL connected
+# ✅ Redis connected  
+# ✅ MongoDB connected
 
 # 5. Start frontend (new terminal)
 cd ..
@@ -39,7 +47,8 @@ npm run dev
 ```
 
 **Your API Key**: Already configured to use Google Gemini! ✅  
-**Setup Guide**: See `CONDA_SETUP.md` for detailed instructions.
+**Architecture**: MongoDB for chat, PostgreSQL for core data ✅  
+**Setup Guide**: See `MONGODB_INTEGRATION.md` for details.
 
 ---
 
@@ -114,7 +123,8 @@ query-companion/
 
 **Backend:**
 - FastAPI 0.104+ (async)
-- PostgreSQL 15+ (SQLAlchemy 2.0)
+- **PostgreSQL 15+** (users, connections, policies)
+- **MongoDB 7+** (chat history, conversations) ✅ NEW
 - Redis 7+ (caching)
 - **Google Gemini API** (Flash, Pro) ✅ Configured
 - Anthropic Claude API (optional alternative)
@@ -214,9 +224,11 @@ Results displayed in interactive table with execution time.
 LLM_PROVIDER=google
 GOOGLE_API_KEY=AIzaSyBe69gnydcPsiTuAD-FNHXw3yVrimsrV34  # ✅ Your key
 
-# Database
-DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/db
-REDIS_URL=redis://localhost:6379
+# Databases
+DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/db  # Core data
+MONGODB_URL=mongodb://localhost:27017  # Chat history ✅ NEW
+MONGODB_DB_NAME=queryus_chat
+REDIS_URL=redis://localhost:6379  # Cache
 
 # Security
 SECRET_KEY=<from generate_keys.py>
@@ -235,9 +247,19 @@ VITE_API_URL=http://localhost:8000
 
 ## 📚 Documentation
 
+### Database Architecture
+- **[MONGODB_INTEGRATION.md](./MONGODB_INTEGRATION.md)** ✅ MongoDB for chat history (NEW!)
+- **[MONGODB_SETUP_SUMMARY.md](./MONGODB_SETUP_SUMMARY.md)** - Quick setup guide
+- **[ARCHITECTURE.md](./ARCHITECTURE.md)** - System architecture deep dive
+
+### Setup & Integration
+- **[CONDA_SETUP.md](./CONDA_SETUP.md)** - Local development with Conda
+- **[GOOGLE_GEMINI_SETUP.md](./GOOGLE_GEMINI_SETUP.md)** - Gemini AI integration
 - **[QUICKSTART.md](./QUICKSTART.md)** - Get started in 5 minutes
 - **[INTEGRATION_COMPLETE.md](./INTEGRATION_COMPLETE.md)** - Integration overview
 - **[FRONTEND_BACKEND_INTEGRATION.md](./FRONTEND_BACKEND_INTEGRATION.md)** - Full integration guide
+
+### Backend & Deployment
 - **[backend/README.md](./backend/README.md)** - Backend documentation
 - **[backend/DEPLOYMENT.md](./backend/DEPLOYMENT.md)** - Production deployment
 - **API Docs** - http://localhost:8000/api/docs (when running)
