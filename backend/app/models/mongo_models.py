@@ -1,41 +1,39 @@
 """MongoDB document models for chat history"""
 from datetime import datetime
-from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional, Annotated
+from pydantic import BaseModel, Field, BeforeValidator
 from bson import ObjectId
 
 
-class PyObjectId(ObjectId):
-    """Custom ObjectId type for Pydantic"""
-    
-    @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
-    
-    @classmethod
-    def validate(cls, v):
-        if not ObjectId.is_valid(v):
-            raise ValueError("Invalid ObjectId")
-        return ObjectId(v)
-    
-    @classmethod
-    def __get_pydantic_json_schema__(cls, field_schema):
-        field_schema.update(type="string")
+def _coerce_object_id(v: Any) -> Optional[str]:
+    """Coerce ObjectId or str to str for Pydantic v2."""
+    if v is None:
+        return None
+    if isinstance(v, ObjectId):
+        return str(v)
+    if isinstance(v, str) and ObjectId.is_valid(v):
+        return v
+    raise ValueError("Invalid ObjectId")
+
+
+# Pydantic v2: use Annotated + BeforeValidator so MongoDB docs load without validator signature errors
+PyObjectId = Annotated[str, BeforeValidator(_coerce_object_id)]
 
 
 class MongoBaseModel(BaseModel):
     """Base model for MongoDB documents"""
     
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
+    model_config = {
+        "populate_by_name": True,
+        "arbitrary_types_allowed": True,
+        "protected_namespaces": (),  # allow fields like model_used
+    }
 
 
 class MessageDocument(MongoBaseModel):
     """MongoDB document for a chat message"""
     
-    id: Optional[PyObjectId] = Field(default_factory=PyObjectId, alias="_id")
+    id: Optional[PyObjectId] = Field(default=None, alias="_id")
     message_id: str = Field(..., description="UUID for the message")
     conversation_id: str = Field(..., description="UUID of conversation")
     role: str = Field(..., description="user or assistant")
@@ -58,7 +56,7 @@ class MessageDocument(MongoBaseModel):
 class ConversationDocument(MongoBaseModel):
     """MongoDB document for a conversation"""
     
-    id: Optional[PyObjectId] = Field(default_factory=PyObjectId, alias="_id")
+    id: Optional[PyObjectId] = Field(default=None, alias="_id")
     conversation_id: str = Field(..., description="UUID for conversation")
     user_id: str = Field(..., description="UUID of user")
     connection_id: str = Field(..., description="UUID of database connection")

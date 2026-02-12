@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional, AsyncGenerator
 import structlog
 
 from app.models.domain import (
-    Message, PerformanceMode, AssistantMessage
+    Message, PerformanceMode, AssistantMessage, SchemaTableUsed
 )
 from app.models.database import Connection
 from app.core.agent.stages import (
@@ -20,6 +20,20 @@ from app.services.llm_service import LLMService
 from app.config import settings
 
 logger = structlog.get_logger()
+
+
+def _schema_used_from_context(context) -> Optional[List[SchemaTableUsed]]:
+    """Build schema_used list from context.db_schema for the assistant message."""
+    if not context or not context.db_schema or not context.db_schema.tables:
+        return None
+    return [
+        SchemaTableUsed(
+            table_name=t["name"],
+            schema_name=t.get("schema"),
+            columns=[{"name": c["name"], "type": c.get("type", "?")} for c in t["columns"]]
+        )
+        for t in context.db_schema.tables
+    ]
 
 
 class AgentRuntime:
@@ -150,7 +164,8 @@ class AgentRuntime:
                     validation=validation_result,
                     execution=None,
                     tool_events=tool_events if 'tool_events' in locals() else None,
-                    error=policy_result.denial_reason
+                    error=policy_result.denial_reason,
+                    schema_used=_schema_used_from_context(context)
                 )
                 return response
             
@@ -192,7 +207,8 @@ class AgentRuntime:
                 validation=validation_result,
                 execution=execution_result,
                 tool_events=tool_events if 'tool_events' in locals() else None,
-                error=None
+                error=None,
+                schema_used=_schema_used_from_context(context)
             )
             
             logger.info("Request processing complete")
@@ -208,7 +224,8 @@ class AgentRuntime:
                 validation=None,
                 execution=None,
                 tool_events=None,
-                error=str(e)
+                error=str(e),
+                schema_used=None
             )
     
     async def process_request_streaming(
@@ -352,9 +369,12 @@ class AgentRuntime:
                 validation=validation_result,
                 execution=execution_result,
                 tool_events=tool_events,
-                error=None
+                error=None,
+                schema_used=_schema_used_from_context(context)
             )
             
+            schema_used_serialized = [s.model_dump() for s in (response.schema_used or [])]
+            sql_serialized = response.sql.model_dump() if hasattr(response.sql, "model_dump") else response.sql
             yield {
                 "type": "message_complete",
                 "message": {
@@ -362,9 +382,10 @@ class AgentRuntime:
                     "role": response.role,
                     "content": response.content,
                     "timestamp": response.timestamp.isoformat(),
-                    "sql": response.sql,
+                    "sql": sql_serialized,
                     "results": response.results,
-                    "tool_events": response.tool_events
+                    "tool_events": response.tool_events,
+                    "schema_used": schema_used_serialized
                 }
             }
             

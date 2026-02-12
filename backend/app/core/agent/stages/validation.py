@@ -33,9 +33,12 @@ def validate_sql(
     status = "valid"
     safe_to_execute = True
     
+    # sqlglot uses "postgres" not "postgresql"
+    read_dialect = "postgres" if dialect.value == "postgresql" else dialect.value
+    
     try:
         # Parse SQL with sqlglot
-        parsed = sqlglot.parse_one(sql, read=dialect.value)
+        parsed = sqlglot.parse_one(sql, read=read_dialect)
         
         # Basic validation - check if parsing succeeded
         if parsed is None:

@@ -4,8 +4,8 @@ import uuid
 import structlog
 
 from app.models.domain import (
-    Language, SQLArtifact, ValidationResult, 
-    QueryResult, AssistantMessage, ToolEvent
+    Language, SQLArtifact, ValidationResult,
+    QueryResult, AssistantMessage, ToolEvent, SchemaTableUsed
 )
 from typing import List, Optional
 
@@ -18,7 +18,8 @@ def compose_response(
     validation: ValidationResult,
     execution: Optional[QueryResult] = None,
     tool_events: List[ToolEvent] = None,
-    error: Optional[str] = None
+    error: Optional[str] = None,
+    schema_used: Optional[List[SchemaTableUsed]] = None
 ) -> AssistantMessage:
     """
     Compose final assistant response.
@@ -56,10 +57,11 @@ def compose_response(
     sql_generation.validation_status = validation.status
     sql_generation.validation_messages = validation.messages
     
-    # Convert to dict format matching frontend expectations
+    # Convert to dict format matching frontend expectations (and SQLArtifact validation)
     sql_dict = {
         "query": sql_generation.query,
-        "dialect": sql_generation.dialect.value
+        "dialect": sql_generation.dialect.value,
+        "explanation": sql_generation.explanation,
     }
     
     results_dict = None
@@ -90,7 +92,8 @@ def compose_response(
         timestamp=datetime.utcnow(),
         sql=sql_dict,
         results=results_dict,
-        tool_events=tool_events_dict
+        tool_events=tool_events_dict,
+        schema_used=schema_used
     )
     
     logger.info("Response composed", content_length=len(content))

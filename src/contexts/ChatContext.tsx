@@ -22,6 +22,12 @@ export type QueryResult = {
   executionTimeMs: number;
 };
 
+export type SchemaTableUsed = {
+  table_name: string;
+  schema_name?: string;
+  columns: { name: string; type: string }[];
+};
+
 export type Message = {
   id: string;
   role: "user" | "assistant" | "system";
@@ -31,6 +37,7 @@ export type Message = {
   sql?: SQLBlock;
   results?: QueryResult;
   isStreaming?: boolean;
+  schemaUsed?: SchemaTableUsed[];
 };
 
 export type Chat = {
@@ -48,16 +55,12 @@ type ChatContextType = {
   activeChat: Chat | null;
   mode: Mode;
   isLoading: boolean;
-  activeConnectionId: string | null;
-  connections: any[];
   setMode: (m: Mode) => void;
-  setActiveConnectionId: (id: string) => void;
   createChat: () => void;
   selectChat: (id: string) => void;
   sendMessage: (content: string) => void;
   deleteChat: (id: string) => void;
   renameChat: (id: string, title: string) => void;
-  loadConnections: () => Promise<void>;
 };
 
 const ChatContext = createContext<ChatContextType | null>(null);
@@ -70,27 +73,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("achillies");
   const [isLoading, setIsLoading] = useState(false);
-  const [activeConnectionId, setActiveConnectionId] = useState<string | null>(null);
-  const [connections, setConnections] = useState<any[]>([]);
 
   useEffect(() => {
     if (isAuthenticated) {
-      loadConnections();
       loadConversations();
     }
   }, [isAuthenticated]);
-
-  const loadConnections = async () => {
-    try {
-      const conns = await apiClient.getConnections();
-      setConnections(conns);
-      if (conns.length > 0 && !activeConnectionId) {
-        setActiveConnectionId(conns[0].id);
-      }
-    } catch (error) {
-      console.error("Failed to load connections:", error);
-    }
-  };
 
   const loadConversations = async () => {
     try {
@@ -151,6 +139,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         timestamp: new Date(),
       };
 
+      // No connection is OK: backend uses demo schema (text-to-SQL only)
       const assistantMsgId = crypto.randomUUID();
       const assistantMsg: Message = {
         id: assistantMsgId,
@@ -194,7 +183,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
               content,
               timestamp: userMsg.timestamp.toISOString(),
             },
-            connection_id: activeConnectionId || "",
+            connection_id: null,
             mode,
             execute_sql: false,
             stream: true,
@@ -230,7 +219,33 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             try {
               const parsed = JSON.parse(jsonStr);
 
-              if (parsed.type === "content" || parsed.type === "token") {
+              if (parsed.type === "message_complete" && parsed.message) {
+                const msg = parsed.message;
+                const fullMessage: Message = {
+                  id: msg.id || assistantMsgId,
+                  role: "assistant",
+                  content: msg.content ?? fullContent,
+                  timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date(),
+                  sql: msg.sql,
+                  results: msg.results,
+                  toolEvents: msg.tool_events ?? msg.toolEvents,
+                  schemaUsed: msg.schema_used ?? msg.schemaUsed,
+                  isStreaming: false,
+                };
+                fullContent = fullMessage.content;
+                setChats((prev) =>
+                  prev.map((c) =>
+                    c.id === targetChatId
+                      ? {
+                          ...c,
+                          messages: c.messages.map((m) =>
+                            m.id === assistantMsgId ? fullMessage : m
+                          ),
+                        }
+                      : c
+                  )
+                );
+              } else if (parsed.type === "content" || parsed.type === "token") {
                 fullContent += parsed.content || parsed.token || "";
               } else if (parsed.type === "done") {
                 // done
@@ -240,18 +255,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
                 fullContent += parsed.content;
               }
 
-              setChats((prev) =>
-                prev.map((c) =>
-                  c.id === targetChatId
-                    ? {
-                        ...c,
-                        messages: c.messages.map((m) =>
-                          m.id === assistantMsgId ? { ...m, content: fullContent } : m
-                        ),
-                      }
-                    : c
-                )
-              );
+              if (parsed.type !== "message_complete") {
+                setChats((prev) =>
+                  prev.map((c) =>
+                    c.id === targetChatId
+                      ? {
+                          ...c,
+                          messages: c.messages.map((m) =>
+                            m.id === assistantMsgId ? { ...m, content: fullContent } : m
+                          ),
+                        }
+                      : c
+                  )
+                );
+              }
             } catch {
               textBuffer = line + "\n" + textBuffer;
               break;
@@ -297,7 +314,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(false);
       }
     },
-    [activeChatId, mode, activeConnectionId]
+    [activeChatId, mode]
   );
 
   const deleteChat = useCallback(
@@ -319,16 +336,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         activeChat,
         mode,
         isLoading,
-        activeConnectionId,
-        connections,
         setMode,
-        setActiveConnectionId,
         createChat,
         selectChat,
         sendMessage,
         deleteChat,
         renameChat,
-        loadConnections,
       }}
     >
       {children}

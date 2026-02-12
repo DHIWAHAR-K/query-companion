@@ -1,4 +1,5 @@
 """Chat endpoints using MongoDB for history"""
+from types import SimpleNamespace
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,7 +9,7 @@ from datetime import datetime
 import json
 
 from app.db.session import get_db
-from app.models.database import User
+from app.models.database import User, SQLDialect
 from app.models.schemas import ChatMessageRequest, ChatMessageResponse, ConversationResponse
 from app.models.domain import Message, PerformanceMode
 from app.api.dependencies import get_current_user
@@ -18,6 +19,24 @@ from app.core.agent.runtime import AgentRuntime
 
 router = APIRouter(prefix="/chat")
 logger = structlog.get_logger()
+
+DEMO_CONNECTION_ID = "demo"
+
+
+async def _get_connection_for_request(connection_id, user_id, db):
+    """Resolve connection: real DB row or None (caller uses demo when None)."""
+    if connection_id and str(connection_id).strip():
+        return await get_connection(connection_id, user_id, db)
+    return None
+
+
+def _demo_connection(user_id: str):
+    """In-memory connection object for demo mode (text-to-SQL only, no real DB)."""
+    return SimpleNamespace(
+        id=DEMO_CONNECTION_ID,
+        user_id=user_id,
+        type=SQLDialect.POSTGRESQL,
+    )
 
 
 @router.post("/message", response_model=ChatMessageResponse)
@@ -37,14 +56,17 @@ async def send_message(
         mode=request.mode.value
     )
     
-    # Get connection from PostgreSQL
-    connection = await get_connection(request.connection_id, current_user.id, db)
-    if not connection:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Connection not found"
-        )
-    
+    # Resolve connection: real DB or demo (when no connection selected)
+    connection = await _get_connection_for_request(request.connection_id, current_user.id, db)
+    if request.connection_id and str(request.connection_id).strip():
+        if not connection:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Connection not found"
+            )
+    else:
+        connection = _demo_connection(str(current_user.id))
+
     # Get or create conversation in MongoDB
     conversation = await MongoConversationService.get_conversation(
         request.conversation_id,
@@ -55,7 +77,7 @@ async def send_message(
         # Create new conversation
         conversation = await MongoConversationService.create_conversation(
             user_id=str(current_user.id),
-            connection_id=str(request.connection_id),
+            connection_id=str(connection.id),
             title=f"Conversation at {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
         )
         logger.info("Created new conversation", conversation_id=conversation.conversation_id)
@@ -97,17 +119,20 @@ async def send_message(
         )
         
         # Save assistant message to MongoDB
+        metadata = {
+            "sql_query": response.sql.get("query") if isinstance(response.sql, dict) and response.sql else None,
+            "explanation": response.content[:500] if response.content else None,
+            "results": response.results,
+            "sql_valid": None,
+            "policy_allowed": None,
+        }
+        if response.schema_used:
+            metadata["schema_used"] = [s.model_dump() for s in response.schema_used]
         await MongoConversationService.add_message(
             conversation_id=request.conversation_id,
             role="assistant",
             content=response.content,
-            metadata={
-                "sql_query": response.sql_query,
-                "explanation": response.explanation,
-                "results": response.results,
-                "sql_valid": response.sql_valid,
-                "policy_allowed": response.policy_allowed
-            },
+            metadata=metadata,
             mode=request.mode.value if request.mode else "achillies",
             tool_events=[
                 {
@@ -151,14 +176,17 @@ async def send_message_stream(
         mode=request.mode.value if request.mode else "achillies"
     )
     
-    # Get connection from PostgreSQL
-    connection = await get_connection(request.connection_id, current_user.id, db)
-    if not connection:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Connection not found"
-        )
-    
+    # Resolve connection: real DB or demo (when no connection selected)
+    connection = await _get_connection_for_request(request.connection_id, current_user.id, db)
+    if request.connection_id and str(request.connection_id).strip():
+        if not connection:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Connection not found"
+            )
+    else:
+        connection = _demo_connection(str(current_user.id))
+
     # Get or create conversation in MongoDB
     conversation = await MongoConversationService.get_conversation(
         request.conversation_id,
@@ -168,7 +196,7 @@ async def send_message_stream(
     if not conversation:
         conversation = await MongoConversationService.create_conversation(
             user_id=str(current_user.id),
-            connection_id=str(request.connection_id),
+            connection_id=str(connection.id),
             title=f"Conversation at {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
         )
     
@@ -202,7 +230,7 @@ async def send_message_stream(
             
             # Stream agent pipeline events
             final_response = None
-            async for event in runtime.process_request_stream(
+            async for event in runtime.process_request_streaming(
                 user_message=request.message.content,
                 connection=connection,
                 conversation_history=history,
@@ -212,23 +240,28 @@ async def send_message_stream(
                 # Send event to client
                 yield f"data: {json.dumps(event)}\n\n"
                 
-                # Capture final response
-                if event.get("type") == "complete":
+                # Capture final response (message_complete from agent runtime)
+                if event.get("type") == "message_complete":
+                    final_response = event.get("message")
+                elif event.get("type") == "complete":
                     final_response = event.get("response")
             
             # Save assistant message to MongoDB
             if final_response:
+                meta = {
+                    "sql_query": final_response.get("sql", {}).get("query") if final_response.get("sql") else final_response.get("sql_query"),
+                    "explanation": final_response.get("explanation"),
+                    "results": final_response.get("results"),
+                    "sql_valid": final_response.get("sql_valid"),
+                    "policy_allowed": final_response.get("policy_allowed"),
+                }
+                if final_response.get("schema_used") is not None:
+                    meta["schema_used"] = final_response.get("schema_used")
                 await MongoConversationService.add_message(
                     conversation_id=request.conversation_id,
                     role="assistant",
                     content=final_response.get("content", ""),
-                    metadata={
-                        "sql_query": final_response.get("sql_query"),
-                        "explanation": final_response.get("explanation"),
-                        "results": final_response.get("results"),
-                        "sql_valid": final_response.get("sql_valid"),
-                        "policy_allowed": final_response.get("policy_allowed")
-                    },
+                    metadata=meta,
                     mode=request.mode.value if request.mode else "achillies",
                     tool_events=final_response.get("tool_events")
                 )
@@ -278,17 +311,29 @@ async def list_conversations(
         limit=100
     )
     
-    # Convert to response schema
+    # Convert to response schema (include last N messages per conversation for list view)
     result = []
     for conv in conversations:
+        message_docs = await MongoConversationService.get_messages(
+            conversation_id=conv.conversation_id,
+            limit=50
+        )
+        messages = [
+            Message(
+                id=msg.message_id,
+                role=msg.role,
+                content=msg.content,
+                timestamp=msg.timestamp,
+                tool_events=msg.tool_events,
+            )
+            for msg in message_docs
+        ]
         result.append(ConversationResponse(
             id=conv.conversation_id,
-            connection_id=conv.connection_id,
             title=conv.title,
+            messages=messages,
             created_at=conv.created_at,
             updated_at=conv.updated_at,
-            message_count=conv.message_count,
-            last_message_preview=conv.last_message_preview or ""
         ))
     
     return result

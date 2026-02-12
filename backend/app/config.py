@@ -40,11 +40,11 @@ class Settings(BaseSettings):
     ACHILLIES_MODEL: str = "claude-sonnet-4-20250514"
     SPRYZEN_MODEL: str = "claude-opus-4-5-20251101"
 
-    # Google (Gemini)
+    # Google (Gemini) – use stable model IDs from https://ai.google.dev/gemini-api/docs/models/gemini
     GOOGLE_API_KEY: str | None = None
-    GOOGLE_VALTRYEK_MODEL: str = "gemini-1.5-flash"
-    GOOGLE_ACHILLIES_MODEL: str = "gemini-1.5-pro"
-    GOOGLE_SPRYZEN_MODEL: str = "gemini-1.5-pro"
+    GOOGLE_VALTRYEK_MODEL: str = "gemini-2.5-flash-lite"
+    GOOGLE_ACHILLIES_MODEL: str = "gemini-2.5-flash"
+    GOOGLE_SPRYZEN_MODEL: str = "gemini-2.5-pro"
 
     # Tools
     ENABLE_WEB_SEARCH: bool = True

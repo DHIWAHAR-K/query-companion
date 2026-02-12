@@ -65,7 +65,7 @@ class MongoDB:
     @classmethod
     def get_db(cls) -> AsyncIOMotorDatabase:
         """Get database instance"""
-        if not cls.db:
+        if cls.db is None:
             raise RuntimeError("MongoDB not connected. Call MongoDB.connect() first.")
         return cls.db
     

@@ -3,7 +3,7 @@ modes:
     # Claude
     anthropic_model: claude-haiku-3-5-20241022
     # Google
-    google_model: gemini-1.5-flash
+    google_model: gemini-2.5-flash-lite
     # Config
     max_schema_tables: 5
     max_tool_calls: 1
@@ -14,7 +14,7 @@ modes:
     # Claude
     anthropic_model: claude-sonnet-4-20250514
     # Google
-    google_model: gemini-1.5-pro
+    google_model: gemini-2.5-flash
     # Config
     max_schema_tables: 15
     max_tool_calls: 3
@@ -26,7 +26,7 @@ modes:
     # Claude
     anthropic_model: claude-opus-4-5-20251101
     # Google
-    google_model: gemini-1.5-pro
+    google_model: gemini-2.5-pro
     # Config
     max_schema_tables: 30
     max_tool_calls: 10

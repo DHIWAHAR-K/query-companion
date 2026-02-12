@@ -35,7 +35,7 @@ class MongoConversationService:
             conversation.model_dump(by_alias=True, exclude={"id"})
         )
         
-        conversation.id = result.inserted_id
+        conversation.id = str(result.inserted_id)
         
         logger.info(
             "Conversation created",
@@ -113,7 +113,7 @@ class MongoConversationService:
         result = await db.messages.insert_one(
             message.model_dump(by_alias=True, exclude={"id"})
         )
-        message.id = result.inserted_id
+        message.id = str(result.inserted_id)
         
         # Update conversation
         preview = content[:100] if len(content) > 100 else content

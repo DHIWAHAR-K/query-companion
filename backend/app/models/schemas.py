@@ -47,7 +47,7 @@ class ChatMessageRequest(BaseModel):
     """Chat message request"""
     conversation_id: str
     message: Message
-    connection_id: str
+    connection_id: Optional[str] = None  # Optional: when missing, use demo schema (no real DB)
     mode: Optional[PerformanceMode] = PerformanceMode.ACHILLIES
     execute_sql: bool = False
     stream: bool = False

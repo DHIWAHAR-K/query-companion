@@ -79,6 +79,13 @@ class Attachment(BaseModel):
     filename: str
 
 
+class SchemaTableUsed(BaseModel):
+    """Schema table used for an answer - payload for frontend"""
+    table_name: str
+    schema_name: Optional[str] = None
+    columns: List[Dict[str, str]]  # [ {"name": "...", "type": "..."} ]
+
+
 class Message(BaseModel):
     """Message model"""
     id: str
@@ -89,6 +96,7 @@ class Message(BaseModel):
     tool_events: Optional[List[ToolEvent]] = None
     sql: Optional[SQLArtifact] = None
     results: Optional[QueryResult] = None
+    schema_used: Optional[List[SchemaTableUsed]] = None
 
 
 class AssistantMessage(Message):

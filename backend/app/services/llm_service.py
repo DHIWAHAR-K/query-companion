@@ -31,6 +31,14 @@ class LLMService:
         
         logger.info("LLM service initialized", provider=self.provider)
     
+    # Deprecated Gemini model IDs that return 404 on v1beta; map to current stable IDs
+    _GEMINI_MODEL_FALLBACK = {
+        "gemini-1.5-pro": "gemini-2.5-flash",
+        "gemini-1.5-flash": "gemini-2.5-flash-lite",
+        "gemini-1.5-pro-latest": "gemini-2.5-flash",
+        "gemini-1.5-flash-latest": "gemini-2.5-flash-lite",
+    }
+
     def get_model_name(self, mode: str) -> str:
         """Get model name for the specified performance mode"""
         if self.provider == "anthropic":
@@ -45,8 +53,10 @@ class LLMService:
                 "achillies": settings.GOOGLE_ACHILLIES_MODEL,
                 "spryzen": settings.GOOGLE_SPRYZEN_MODEL,
             }
-        
-        return mapping.get(mode, mapping["achillies"])
+        result = mapping.get(mode, mapping["achillies"])
+        if self.provider == "google" and result in self._GEMINI_MODEL_FALLBACK:
+            result = self._GEMINI_MODEL_FALLBACK[result]
+        return result
     
     async def generate_sql(
         self,
