@@ -2,14 +2,9 @@ import { useState } from "react";
 import type { Message } from "@/contexts/ChatContext";
 import { cn } from "@/lib/utils";
 import { Copy, ThumbsUp, ThumbsDown, RotateCcw, Check } from "lucide-react";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+/** Lined table wrapper: top line, vertical pipes, bottom line (ASCII-style grid) */
+const linedTableClass =
+  "border-collapse w-full border border-border [&_th]:border [&_th]:border-border [&_td]:border [&_td]:border-border [&_tr:first-child_th]:border-t-2 [&_tr:first-child_th]:border-t-border [&_tr:last-child_td]:border-b-2 [&_tr:last-child_td]:border-b-border";
 
 export default function MessageBubble({ message }: { message: Message }) {
   const [copied, setCopied] = useState(false);
@@ -38,10 +33,20 @@ export default function MessageBubble({ message }: { message: Message }) {
     );
   }
 
-  // Assistant message
+  // Normalize results from API (snake_case from backend vs camelCase in types)
+  const results = message.results
+    ? {
+        columns: message.results.columns ?? [],
+        rows: message.results.rows ?? [],
+        totalRows: (message.results as any).total_rows ?? message.results.totalRows ?? 0,
+        executionTimeMs: (message.results as any).execution_time_ms ?? message.results.executionTimeMs ?? 0,
+      }
+    : null;
+
+  // Assistant message: order = 1) Schema table, 2) SQL code block, 3) Result table
   return (
-    <div className="flex flex-col gap-1 max-w-[85%]">
-      {/* Content */}
+    <div className="flex flex-col gap-3 max-w-[85%]">
+      {/* Optional intro content (e.g. "Generated schema and query as requested.") */}
       <div className="text-[15px] text-foreground whitespace-pre-wrap leading-relaxed">
         {message.content}
         {message.isStreaming && !message.content && (
@@ -52,36 +57,98 @@ export default function MessageBubble({ message }: { message: Message }) {
         )}
       </div>
 
-      {/* Schema used - tables the chatbot used for this answer */}
+      {/* 1. Schema table first — lined design */}
       {message.schemaUsed && message.schemaUsed.length > 0 && (
-        <div className="mt-3 rounded-lg border border-border bg-muted/30 overflow-hidden">
+        <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
           <p className="text-xs font-medium text-muted-foreground px-3 py-2 border-b border-border">
             Schema used for this answer
           </p>
           <div className="p-2 space-y-3">
             {message.schemaUsed.map((tbl, idx) => (
-              <div key={idx} className="rounded border border-border/70 bg-background/50 overflow-hidden">
-                <p className="text-xs font-medium px-2 py-1.5 bg-muted/50 text-foreground">
+              <div key={idx} className="overflow-hidden">
+                <p className="text-xs font-medium px-2 py-1.5 bg-muted/50 text-foreground mb-0">
                   {tbl.schema_name ? `${tbl.schema_name}.${tbl.table_name}` : tbl.table_name}
                 </p>
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-border/70">
-                      <TableHead className="h-8 px-2 text-xs">Column</TableHead>
-                      <TableHead className="h-8 px-2 text-xs">Type</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                <table className={cn("mt-0", linedTableClass)}>
+                  <thead>
+                    <tr>
+                      <th className="h-8 px-2 text-xs text-left font-medium text-muted-foreground">Column</th>
+                      <th className="h-8 px-2 text-xs text-left font-medium text-muted-foreground">Type</th>
+                    </tr>
+                  </thead>
+                  <tbody>
                     {(tbl.columns || []).map((col, cidx) => (
-                      <TableRow key={cidx} className="border-border/70">
-                        <TableCell className="py-1 px-2 text-xs font-mono">{col.name}</TableCell>
-                        <TableCell className="py-1 px-2 text-xs text-muted-foreground">{col.type}</TableCell>
-                      </TableRow>
+                      <tr key={cidx}>
+                        <td className="py-1.5 px-2 text-xs font-mono border-border">{col.name}</td>
+                        <td className="py-1.5 px-2 text-xs text-muted-foreground border-border">{col.type}</td>
+                      </tr>
                     ))}
-                  </TableBody>
-                </Table>
+                  </tbody>
+                </table>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Explanation between schema and SQL */}
+      {message.explanationAfterSchema && (
+        <p className="text-sm text-foreground leading-relaxed">
+          {message.explanationAfterSchema}
+        </p>
+      )}
+
+      {/* 2. SQL code block with explanation before and after */}
+      {message.sql?.query && (
+        <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
+          <p className="text-xs font-medium text-muted-foreground px-3 py-2 border-b border-border">
+            SQL
+          </p>
+          <div className="p-3 space-y-3">
+            {message.sql.explanation && (
+              <p className="text-sm text-foreground leading-relaxed">
+                {message.sql.explanation}
+              </p>
+            )}
+            <pre className="text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap">
+              <code>{message.sql.query}</code>
+            </pre>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {message.explanationBeforeResult ?? "The query above returns the following result."}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* 3. Result table — lined design */}
+      {results && results.columns.length > 0 && (
+        <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
+          <p className="text-xs font-medium text-muted-foreground px-3 py-2 border-b border-border">
+            Result ({results.totalRows} row{results.totalRows !== 1 ? "s" : ""}, {results.executionTimeMs}ms)
+          </p>
+          <div className="overflow-x-auto p-2">
+            <table className={linedTableClass}>
+              <thead>
+                <tr>
+                  {results.columns.map((col, cidx) => (
+                    <th key={cidx} className="h-8 px-2 text-xs text-left font-medium text-muted-foreground border-border">
+                      {col.name}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(results.rows ?? []).map((row, ridx) => (
+                  <tr key={ridx}>
+                    {results.columns.map((_, cidx) => (
+                      <td key={cidx} className="py-1.5 px-2 text-xs font-mono border-border">
+                        {String(row[cidx] ?? "")}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

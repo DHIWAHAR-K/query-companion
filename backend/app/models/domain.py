@@ -97,6 +97,8 @@ class Message(BaseModel):
     sql: Optional[SQLArtifact] = None
     results: Optional[QueryResult] = None
     schema_used: Optional[List[SchemaTableUsed]] = None
+    explanation_after_schema: Optional[str] = None
+    explanation_before_result: Optional[str] = None
 
 
 class AssistantMessage(Message):

@@ -13,6 +13,7 @@ export type ToolEvent = {
 export type SQLBlock = {
   query: string;
   dialect: string;
+  explanation?: string;
 };
 
 export type QueryResult = {
@@ -38,6 +39,8 @@ export type Message = {
   results?: QueryResult;
   isStreaming?: boolean;
   schemaUsed?: SchemaTableUsed[];
+  explanationAfterSchema?: string;
+  explanationBeforeResult?: string;
 };
 
 export type Chat = {
@@ -230,6 +233,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
                   results: msg.results,
                   toolEvents: msg.tool_events ?? msg.toolEvents,
                   schemaUsed: msg.schema_used ?? msg.schemaUsed,
+                  explanationAfterSchema: msg.explanation_after_schema ?? msg.explanationAfterSchema,
+                  explanationBeforeResult: msg.explanation_before_result ?? msg.explanationBeforeResult,
                   isStreaming: false,
                 };
                 fullContent = fullMessage.content;
