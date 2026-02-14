@@ -1,5 +1,6 @@
+import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useChat, type Mode } from "@/contexts/ChatContext";
+import { useChat } from "@/contexts/ChatContext";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   PanelLeftClose,
@@ -7,9 +8,6 @@ import {
   Plus,
   Search,
   FolderOpen,
-  LayoutGrid,
-  Code,
-  MessageSquare,
   MoreHorizontal,
   Trash2,
   LogOut,
@@ -21,6 +19,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ConnectionsSheet } from "@/components/connections/ConnectionsSheet";
 
 function groupChatsByDate(chats: { id: string; title: string; updatedAt: Date }[]) {
   const now = new Date();
@@ -57,48 +56,107 @@ interface SidebarProps {
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { user, logout } = useAuth();
   const { chats, activeChat, createChat, selectChat, deleteChat } = useChat();
-  const groups = groupChatsByDate(chats);
+  const [connectionsOpen, setConnectionsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [focusSearchAfterExpand, setFocusSearchAfterExpand] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const filteredChats = searchQuery.trim()
+    ? chats.filter((c) => c.title.toLowerCase().includes(searchQuery.trim().toLowerCase()))
+    : chats;
+  const groups = groupChatsByDate(filteredChats);
+
+  useEffect(() => {
+    if (!collapsed && focusSearchAfterExpand && searchInputRef.current) {
+      searchInputRef.current.focus();
+      setFocusSearchAfterExpand(false);
+    }
+  }, [collapsed, focusSearchAfterExpand]);
 
   const iconBtn =
     "flex items-center justify-center h-9 w-9 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent transition-colors shrink-0";
 
+  const handleSearchClick = () => {
+    if (collapsed) {
+      onToggle();
+      setFocusSearchAfterExpand(true);
+    }
+  };
+
   if (collapsed) {
     return (
-      <div className="flex h-full w-[52px] flex-col items-center bg-sidebar py-3 gap-1">
-        <button onClick={onToggle} className={iconBtn}>
-          <PanelLeft className="h-[18px] w-[18px]" />
-        </button>
-        <button onClick={createChat} className={iconBtn}>
-          <Plus className="h-[18px] w-[18px]" />
-        </button>
-        <button className={iconBtn}><Search className="h-[18px] w-[18px]" /></button>
-        <button className={iconBtn}><FolderOpen className="h-[18px] w-[18px]" /></button>
-        <button className={iconBtn}><LayoutGrid className="h-[18px] w-[18px]" /></button>
-        <button className={iconBtn}><Code className="h-[18px] w-[18px]" /></button>
-        <div className="flex-1" />
-        <Avatar className="h-8 w-8 cursor-pointer" onClick={onToggle}>
-          <AvatarFallback className="text-[11px] font-semibold bg-primary text-primary-foreground">
-            {user?.full_name?.slice(0, 2).toUpperCase() || "DA"}
-          </AvatarFallback>
-        </Avatar>
-      </div>
+      <>
+        <div className="flex h-full w-[52px] flex-col items-center bg-sidebar py-3 gap-1">
+          <button onClick={onToggle} className={iconBtn} title="Toggle sidebar" aria-label="Toggle sidebar">
+            <PanelLeft className="h-[18px] w-[18px]" />
+          </button>
+          <button onClick={createChat} className={iconBtn} title="New chat" aria-label="New chat">
+            <Plus className="h-[18px] w-[18px]" />
+          </button>
+          <button onClick={handleSearchClick} className={iconBtn} title="Search chats" aria-label="Search chats">
+            <Search className="h-[18px] w-[18px]" />
+          </button>
+          <button onClick={() => setConnectionsOpen(true)} className={iconBtn} title="Connections" aria-label="Connections">
+            <FolderOpen className="h-[18px] w-[18px]" />
+          </button>
+          <div className="flex-1" />
+          <Avatar className="h-8 w-8 cursor-pointer" onClick={onToggle} title="Expand sidebar">
+            <AvatarFallback className="text-[11px] font-semibold bg-primary text-primary-foreground">
+              {user?.full_name?.slice(0, 2).toUpperCase() || "DA"}
+            </AvatarFallback>
+          </Avatar>
+        </div>
+        <ConnectionsSheet open={connectionsOpen} onOpenChange={setConnectionsOpen} />
+      </>
     );
   }
 
   return (
-    <div className="flex h-full w-[260px] flex-col bg-sidebar transition-all">
-      {/* Top bar */}
-      <div className="flex items-center justify-between px-3 pt-3 pb-1">
-        <button onClick={onToggle} className={iconBtn}>
-          <PanelLeftClose className="h-[18px] w-[18px]" />
-        </button>
-        <button onClick={createChat} className={iconBtn}>
-          <Plus className="h-[18px] w-[18px]" />
-        </button>
-      </div>
+    <>
+      <div className="flex h-full w-[260px] flex-col bg-sidebar transition-all">
+        {/* Top bar */}
+        <div className="flex items-center justify-between px-3 pt-3 pb-1">
+          <button onClick={onToggle} className={iconBtn} title="Toggle sidebar" aria-label="Toggle sidebar">
+            <PanelLeftClose className="h-[18px] w-[18px]" />
+          </button>
+          <div className="flex items-center gap-0.5">
+            <button onClick={createChat} className={iconBtn} title="New chat" aria-label="New chat">
+              <Plus className="h-[18px] w-[18px]" />
+            </button>
+            <button
+              onClick={() => searchInputRef.current?.focus()}
+              className={iconBtn}
+              title="Search chats"
+              aria-label="Search chats"
+            >
+              <Search className="h-[18px] w-[18px]" />
+            </button>
+            <button
+              onClick={() => setConnectionsOpen(true)}
+              className={iconBtn}
+              title="Connections"
+              aria-label="Connections"
+            >
+              <FolderOpen className="h-[18px] w-[18px]" />
+            </button>
+          </div>
+        </div>
 
-      {/* Chat list */}
-      <div className="flex-1 overflow-y-auto px-2 pt-2">
+        {/* Search */}
+        <div className="px-2 pb-2">
+          <input
+            ref={searchInputRef}
+            type="text"
+            placeholder="Search chats..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            aria-label="Search chats"
+          />
+        </div>
+
+        {/* Chat list */}
+        <div className="flex-1 overflow-y-auto px-2 pt-2">
         {groups.map((group) => (
           <div key={group.label} className="mb-3">
             <p className="px-2 py-1 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
@@ -136,20 +194,22 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         ))}
       </div>
 
-      {/* Bottom */}
-      <div className="border-t border-sidebar-border p-3">
-        <div className="flex items-center gap-2">
-          <Avatar className="h-8 w-8">
-            <AvatarFallback className="text-[11px] font-semibold bg-primary text-primary-foreground">
-              {user?.full_name?.slice(0, 2).toUpperCase() || "DA"}
-            </AvatarFallback>
-          </Avatar>
-          <span className="flex-1 truncate text-sm text-sidebar-foreground">{user?.full_name}</span>
-          <button onClick={logout} className={cn(iconBtn, "h-7 w-7")}>
-            <LogOut className="h-3.5 w-3.5" />
-          </button>
+        {/* Bottom */}
+        <div className="border-t border-sidebar-border p-3">
+          <div className="flex items-center gap-2">
+            <Avatar className="h-8 w-8">
+              <AvatarFallback className="text-[11px] font-semibold bg-primary text-primary-foreground">
+                {user?.full_name?.slice(0, 2).toUpperCase() || "DA"}
+              </AvatarFallback>
+            </Avatar>
+            <span className="flex-1 truncate text-sm text-sidebar-foreground">{user?.full_name}</span>
+            <button onClick={logout} className={cn(iconBtn, "h-7 w-7")} title="Log out" aria-label="Log out">
+              <LogOut className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+      <ConnectionsSheet open={connectionsOpen} onOpenChange={setConnectionsOpen} />
+    </>
   );
 }

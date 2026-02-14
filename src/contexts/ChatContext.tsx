@@ -64,6 +64,8 @@ type ChatContextType = {
   sendMessage: (content: string) => void;
   deleteChat: (id: string) => void;
   renameChat: (id: string, title: string) => void;
+  selectedConnectionId: string | null;
+  setSelectedConnectionId: (id: string | null) => void;
 };
 
 const ChatContext = createContext<ChatContextType | null>(null);
@@ -76,6 +78,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("achillies");
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -186,7 +189,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
               content,
               timestamp: userMsg.timestamp.toISOString(),
             },
-            connection_id: null,
+            connection_id: selectedConnectionId ?? null,
             mode,
             execute_sql: false,
             stream: true,
@@ -347,6 +350,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         sendMessage,
         deleteChat,
         renameChat,
+        selectedConnectionId,
+        setSelectedConnectionId,
       }}
     >
       {children}
