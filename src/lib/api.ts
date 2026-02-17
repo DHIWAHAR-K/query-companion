@@ -196,6 +196,23 @@ class ApiClient {
       method: 'POST',
     });
   }
+
+  async getSampleData(
+    connectionId: string,
+    params: { table: string; schema_name?: string; limit?: number }
+  ): Promise<{ columns: { name: string; type: string }[]; rows: unknown[][]; total_rows: number }> {
+    return this.request<{ columns: { name: string; type: string }[]; rows: unknown[][]; total_rows: number }>(
+      `/api/v1/schema/${connectionId}/sample`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          table: params.table,
+          schema_name: params.schema_name ?? null,
+          limit: params.limit ?? 10,
+        }),
+      }
+    );
+  }
 }
 
 export const apiClient = new ApiClient(API_BASE_URL);

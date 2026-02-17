@@ -1,11 +1,23 @@
 import { useState, useRef, useEffect } from "react";
 import { useChat, type Mode } from "@/contexts/ChatContext";
-import { Plus, ArrowUp, Volume2, Pencil, GraduationCap, Code, Sparkles, HardDrive } from "lucide-react";
+import { Paperclip, ArrowUp, Volume2, Pencil, GraduationCap, Code, Sparkles, HardDrive, X } from "lucide-react";
 
 const modeLabels: Record<Mode, string> = {
   valtryek: "Valtryek",
   achillies: "Achillies",
   spryzen: "Spryzen",
+};
+
+const DATA_FILE_EXTENSIONS = [".csv", ".tsv"];
+function isDataFile(filename: string): boolean {
+  const lower = filename.toLowerCase();
+  return DATA_FILE_EXTENSIONS.some((ext) => lower.endsWith(ext));
+}
+
+export type AttachmentForSend = {
+  type: "file";
+  data: string;
+  filename: string;
 };
 
 const quickActions = [
@@ -17,10 +29,11 @@ const quickActions = [
 ];
 
 export default function ChatInput() {
-  const { sendMessage, mode } = useChat();
+  const { sendMessage, mode, activeChat } = useChat();
   const [value, setValue] = useState("");
+  const [attachedFile, setAttachedFile] = useState<AttachmentForSend | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { activeChat } = useChat();
 
   const hasMessages = activeChat && activeChat.messages.length > 0;
 
@@ -31,11 +44,30 @@ export default function ChatInput() {
     }
   }, [value]);
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!isDataFile(file.name)) {
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const b64 = typeof reader.result === "string" ? reader.result.split(",")[1] ?? reader.result : null;
+      if (b64) {
+        setAttachedFile({ type: "file", data: b64, filename: file.name });
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
   const handleSubmit = () => {
     const trimmed = value.trim();
     if (!trimmed) return;
-    sendMessage(trimmed);
+    const attachments = attachedFile ? [attachedFile] : undefined;
+    sendMessage(trimmed, attachments);
     setValue("");
+    setAttachedFile(null);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -47,9 +79,7 @@ export default function ChatInput() {
 
   return (
     <div className="mx-auto w-full max-w-[600px] px-4 pb-4">
-      {/* Input box */}
       <div className="rounded-2xl border border-border bg-surface overflow-hidden">
-        {/* Textarea row */}
         <div className="px-4 pt-3 pb-1">
           <textarea
             ref={textareaRef}
@@ -62,14 +92,39 @@ export default function ChatInput() {
           />
         </div>
 
-        {/* Bottom bar */}
         <div className="flex items-center justify-between px-3 pb-2.5 pt-1">
-          <button className="flex items-center justify-center h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
-            <Plus className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.tsv"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center justify-center h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              title="Attach CSV/TSV file"
+            >
+              <Paperclip className="h-4 w-4" />
+            </button>
+            {attachedFile && (
+              <span className="flex items-center gap-1 text-xs text-muted-foreground max-w-[180px] truncate">
+                <span className="truncate">{attachedFile.filename}</span>
+                <button
+                  type="button"
+                  onClick={() => setAttachedFile(null)}
+                  className="p-0.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+                  aria-label="Remove attachment"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </span>
+            )}
+          </div>
 
           <div className="flex items-center gap-2">
-            {/* Model selector */}
             <button className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
               <span className="font-medium text-foreground">{modeLabels[mode]}</span>
               <span className="text-muted-foreground">Extended</span>
@@ -78,7 +133,6 @@ export default function ChatInput() {
               </svg>
             </button>
 
-            {/* Audio / Send */}
             {value.trim() ? (
               <button
                 onClick={handleSubmit}
@@ -95,12 +149,12 @@ export default function ChatInput() {
         </div>
       </div>
 
-      {/* Quick action pills – only show on empty state */}
       {!hasMessages && (
         <div className="flex items-center justify-center gap-2 mt-3 flex-wrap">
           {quickActions.map((action) => (
             <button
               key={action.label}
+              type="button"
               className="flex items-center gap-1.5 rounded-full border border-border bg-transparent px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
             >
               <action.icon className="h-3.5 w-3.5" />

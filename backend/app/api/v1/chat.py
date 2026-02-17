@@ -15,6 +15,7 @@ from app.models.domain import Message, PerformanceMode
 from app.api.dependencies import get_current_user
 from app.services.mongo_conversation_service import MongoConversationService
 from app.services.connection_service import get_connection
+from app.services.data_file_service import get_first_data_file_parsed
 from app.core.agent.runtime import AgentRuntime
 from app.core.agent.simulated_agent import process_simulated
 
@@ -52,6 +53,30 @@ def _last_generated_schema_from_messages(message_docs) -> str | None:
         if lines:
             return "\n".join(lines).strip()
     return None
+
+
+def _schema_text_from_schema_used(schema_used: list) -> str:
+    """Build schema text from a list of schema_used dicts (for file-upload path)."""
+    if not schema_used or not isinstance(schema_used, list):
+        return ""
+    lines = []
+    for t in schema_used:
+        if not isinstance(t, dict):
+            continue
+        schema_name = t.get("schema_name") or "public"
+        table_name = t.get("table_name") or ""
+        cols = t.get("columns") or []
+        if not table_name:
+            continue
+        lines.append(f"{schema_name}.{table_name}")
+        lines.append("column  type  key/notes")
+        for c in cols:
+            name = c.get("name") if isinstance(c, dict) else ""
+            typ = c.get("type") if isinstance(c, dict) else "text"
+            if name:
+                lines.append(f"{name}  {typ}")
+        lines.append("")
+    return "\n".join(lines).strip() if lines else ""
 
 
 async def _get_connection_for_request(connection_id, user_id, db):
@@ -258,6 +283,8 @@ async def send_message_stream(
         ))
     
     is_demo = getattr(connection, "id", None) == DEMO_CONNECTION_ID
+    attachments = getattr(request.message, "attachments", None) or []
+    file_data = get_first_data_file_parsed(attachments)
     
     async def event_generator():
         """Generate SSE events for streaming response"""
@@ -269,8 +296,38 @@ async def send_message_stream(
             )
             
             final_response = None
-            if is_demo:
-                # Simulated DB: single call, then one message_complete event
+            if file_data:
+                # Data file attached: use file schema + preview, generate SQL with process_simulated
+                last_schema = _schema_text_from_schema_used(file_data.get("schema_used") or [])
+                response = await process_simulated(
+                    user_message=request.message.content,
+                    conversation_history=history,
+                    last_generated_schema=last_schema or None,
+                )
+                schema_used_serialized = file_data.get("schema_used") or []
+                sql_serialized = response.sql.model_dump() if response.sql else None
+                results_serialized = response.results.model_dump() if response.results else None
+                data_preview = {
+                    "columns": file_data.get("columns") or [],
+                    "rows": file_data.get("rows") or [],
+                    "label": file_data.get("label") or "Data preview",
+                }
+                final_response = {
+                    "id": response.id,
+                    "role": response.role,
+                    "content": response.content,
+                    "timestamp": response.timestamp.isoformat(),
+                    "sql": sql_serialized,
+                    "results": results_serialized,
+                    "tool_events": response.tool_events,
+                    "schema_used": schema_used_serialized,
+                    "explanation_after_schema": getattr(response, "explanation_after_schema", None),
+                    "explanation_before_result": getattr(response, "explanation_before_result", None),
+                    "data_preview": data_preview,
+                }
+                yield f"data: {json.dumps({'type': 'message_complete', 'message': final_response})}\n\n"
+            elif is_demo:
+                # Simulated DB: single call, then one message_complete event (no file)
                 last_schema = _last_generated_schema_from_messages(message_docs)
                 response = await process_simulated(
                     user_message=request.message.content,
@@ -322,6 +379,8 @@ async def send_message_stream(
                     meta["explanation_after_schema"] = final_response.get("explanation_after_schema")
                 if final_response.get("explanation_before_result") is not None:
                     meta["explanation_before_result"] = final_response.get("explanation_before_result")
+                if final_response.get("data_preview") is not None:
+                    meta["data_preview"] = final_response.get("data_preview")
                 await MongoConversationService.add_message(
                     conversation_id=request.conversation_id,
                     role="assistant",

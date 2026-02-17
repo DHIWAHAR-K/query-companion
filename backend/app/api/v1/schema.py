@@ -8,7 +8,7 @@ from app.models.database import User
 from app.models.schemas import SchemaTreeResponse, SampleDataRequest, SampleDataResponse
 from app.api.dependencies import get_current_user
 from app.services.connection_service import get_connection
-from app.services.schema_service import get_cached_schema, invalidate_schema_cache
+from app.services.schema_service import get_cached_schema, invalidate_schema_cache, fetch_sample_data
 
 router = APIRouter(prefix="/schema")
 logger = structlog.get_logger()
@@ -93,28 +93,36 @@ async def get_sample_data(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get sample data from a table"""
-    logger.info("Getting sample data", connection_id=connection_id, table=request.table)
-    
-    # Get connection
+    """Get sample data from a table (first N rows, df.head-style)."""
+    logger.info(
+        "Getting sample data",
+        connection_id=connection_id,
+        table=request.table,
+        schema=request.schema_name,
+    )
     connection = await get_connection(connection_id, current_user.id, db)
     if not connection:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Connection not found"
         )
-    
-    # TODO: Implement actual sample data fetching in query execution phase
-    # For now, return mock data
-    
-    return SampleDataResponse(
-        columns=[
-            {"name": "id", "type": "INTEGER"},
-            {"name": "name", "type": "VARCHAR"}
-        ],
-        rows=[
-            [1, "Sample 1"],
-            [2, "Sample 2"]
-        ],
-        total_rows=2
-    )
+    try:
+        data = fetch_sample_data(
+            connection=connection,
+            table_name=request.table,
+            schema_name=request.schema_name,
+            limit=request.limit,
+        )
+        return SampleDataResponse(
+            columns=data["columns"],
+            rows=data["rows"],
+            total_rows=data["total_rows"],
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        logger.error("Sample data fetch failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch sample: {str(e)}"
+        )

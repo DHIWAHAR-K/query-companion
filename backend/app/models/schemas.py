@@ -113,6 +113,7 @@ class SchemaTreeResponse(BaseModel):
 class SampleDataRequest(BaseModel):
     """Sample data request"""
     table: str
+    schema_name: Optional[str] = None  # e.g. public for PostgreSQL
     limit: int = 10
 
 

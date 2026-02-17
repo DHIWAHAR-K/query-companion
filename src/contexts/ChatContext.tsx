@@ -29,6 +29,12 @@ export type SchemaTableUsed = {
   columns: { name: string; type: string }[];
 };
 
+export type DataPreview = {
+  columns: { name: string; type?: string }[];
+  rows: unknown[][];
+  label?: string;
+};
+
 export type Message = {
   id: string;
   role: "user" | "assistant" | "system";
@@ -41,6 +47,7 @@ export type Message = {
   schemaUsed?: SchemaTableUsed[];
   explanationAfterSchema?: string;
   explanationBeforeResult?: string;
+  dataPreview?: DataPreview | null;
 };
 
 export type Chat = {
@@ -53,6 +60,12 @@ export type Chat = {
 
 export type Mode = "valtryek" | "achillies" | "spryzen";
 
+export type MessageAttachment = {
+  type: "file";
+  data: string;
+  filename: string;
+};
+
 type ChatContextType = {
   chats: Chat[];
   activeChat: Chat | null;
@@ -61,7 +74,7 @@ type ChatContextType = {
   setMode: (m: Mode) => void;
   createChat: () => void;
   selectChat: (id: string) => void;
-  sendMessage: (content: string) => void;
+  sendMessage: (content: string, attachments?: MessageAttachment[]) => void;
   deleteChat: (id: string) => void;
   renameChat: (id: string, title: string) => void;
   selectedConnectionId: string | null;
@@ -122,7 +135,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, attachments?: MessageAttachment[]) => {
       let chatId = activeChatId;
 
       if (!chatId) {
@@ -188,6 +201,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
               role: "user",
               content,
               timestamp: userMsg.timestamp.toISOString(),
+              ...(attachments?.length ? { attachments } : {}),
             },
             connection_id: selectedConnectionId ?? null,
             mode,
@@ -238,6 +252,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
                   schemaUsed: msg.schema_used ?? msg.schemaUsed,
                   explanationAfterSchema: msg.explanation_after_schema ?? msg.explanationAfterSchema,
                   explanationBeforeResult: msg.explanation_before_result ?? msg.explanationBeforeResult,
+                  dataPreview: msg.data_preview ?? msg.dataPreview ?? null,
                   isStreaming: false,
                 };
                 fullContent = fullMessage.content;
@@ -322,7 +337,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(false);
       }
     },
-    [activeChatId, mode]
+    [activeChatId, mode, selectedConnectionId]
   );
 
   const deleteChat = useCallback(

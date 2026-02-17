@@ -1,9 +1,10 @@
 """Schema introspection service"""
-from sqlalchemy import create_engine, inspect, MetaData, Table
+from sqlalchemy import create_engine, inspect, MetaData, Table, text
 from sqlalchemy.engine import Engine
 import structlog
 from typing import Dict, Any, List, Optional
 import json
+import re
 
 from app.models.database import Connection
 from app.models.domain import Schema, SQLDialect, PerformanceMode
@@ -200,6 +201,58 @@ async def invalidate_schema_cache(connection_id: str):
         logger.debug("Schema cache invalidated", connection_id=connection_id)
     except Exception as e:
         logger.warning("Cache invalidation failed", error=str(e))
+
+
+# Safe identifier: alphanumeric and underscore only
+_IDENT_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+
+def fetch_sample_data(
+    connection: Connection,
+    table_name: str,
+    schema_name: Optional[str] = None,
+    limit: int = 10,
+) -> Dict[str, Any]:
+    """
+    Fetch first N rows from a table (df.head-style). Uses dialect-safe quoting.
+    Returns dict with keys: columns (list of {name, type}), rows (list of lists), total_rows.
+    """
+    if not _IDENT_RE.match(table_name):
+        raise ValueError("Invalid table name")
+    if schema_name is not None and not _IDENT_RE.match(schema_name):
+        raise ValueError("Invalid schema name")
+
+    url = _build_connection_url(connection)
+    engine = create_engine(url, echo=False)
+    try:
+        with engine.connect() as conn:
+            dialect = getattr(connection.type, "value", str(connection.type)).lower()
+            if dialect == "postgresql":
+                qualified = f'"{schema_name or "public"}"."{table_name}"'
+            elif dialect == "mysql":
+                qualified = f"`{table_name}`"
+            elif dialect == "snowflake":
+                qualified = f'"{schema_name or "PUBLIC"}"."{table_name}"'
+            else:
+                qualified = f'"{table_name}"'
+
+            # LIMIT is safe as integer
+            limit = max(1, min(limit, 100))
+            q = text(f'SELECT * FROM {qualified} LIMIT :lim').bindparams(lim=limit)
+            result = conn.execute(q)
+            rows = [list(row) for row in result]
+            desc = result.cursor.description
+            columns = [
+                {"name": d[0], "type": str(d[1]) if d[1] else "unknown"}
+                for d in (desc or [])
+            ]
+            return {
+                "columns": columns,
+                "rows": rows,
+                "total_rows": len(rows),
+            }
+    finally:
+        engine.dispose()
 
 
 def filter_schema_by_mode(schema: Schema, mode: PerformanceMode, query: str = "") -> Schema:

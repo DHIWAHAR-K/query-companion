@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { Message } from "@/contexts/ChatContext";
 import { cn } from "@/lib/utils";
 import { Copy, ThumbsUp, ThumbsDown, RotateCcw, Check } from "lucide-react";
-/** Lined table wrapper: top line, vertical pipes, bottom line (ASCII-style grid) */
+
 const linedTableClass =
   "border-collapse w-full border border-border [&_th]:border [&_th]:border-border [&_td]:border [&_td]:border-border [&_tr:first-child_th]:border-t-2 [&_tr:first-child_th]:border-t-border [&_tr:last-child_td]:border-b-2 [&_tr:last-child_td]:border-b-border";
 
@@ -33,7 +33,9 @@ export default function MessageBubble({ message }: { message: Message }) {
     );
   }
 
-  // Normalize results from API (snake_case from backend vs camelCase in types)
+  const dataPreview = message.dataPreview ?? null;
+  const showDataPreview = dataPreview && dataPreview.columns && dataPreview.columns.length > 0;
+
   const results = message.results
     ? {
         columns: message.results.columns ?? [],
@@ -43,10 +45,8 @@ export default function MessageBubble({ message }: { message: Message }) {
       }
     : null;
 
-  // Assistant message: order = 1) Schema table, 2) SQL code block, 3) Result table
   return (
     <div className="flex flex-col gap-3 max-w-[85%]">
-      {/* Optional intro content (e.g. "Generated schema and query as requested.") */}
       <div className="text-[15px] text-foreground whitespace-pre-wrap leading-relaxed">
         {message.content}
         {message.isStreaming && !message.content && (
@@ -57,7 +57,39 @@ export default function MessageBubble({ message }: { message: Message }) {
         )}
       </div>
 
-      {/* 1. Schema table first — lined design */}
+      {/* Data preview: only when backend included data_preview (e.g. file upload) */}
+      {showDataPreview && (
+        <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
+          <p className="text-xs font-medium text-muted-foreground px-3 py-2 border-b border-border">
+            {dataPreview.label ?? "Data preview"}
+          </p>
+          <div className="overflow-x-auto p-2">
+            <table className={linedTableClass}>
+              <thead>
+                <tr>
+                  {dataPreview.columns.map((col, cidx) => (
+                    <th key={cidx} className="h-8 px-2 text-xs text-left font-medium text-muted-foreground border-border">
+                      {col.name}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(dataPreview.rows ?? []).map((row, ridx) => (
+                  <tr key={ridx}>
+                    {dataPreview.columns.map((_, cidx) => (
+                      <td key={cidx} className="py-1.5 px-2 text-xs font-mono border-border">
+                        {String((row as unknown[])[cidx] ?? "")}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {message.schemaUsed && message.schemaUsed.length > 0 && (
         <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
           <p className="text-xs font-medium text-muted-foreground px-3 py-2 border-b border-border">
@@ -91,14 +123,12 @@ export default function MessageBubble({ message }: { message: Message }) {
         </div>
       )}
 
-      {/* Explanation between schema and SQL */}
       {message.explanationAfterSchema && (
         <p className="text-sm text-foreground leading-relaxed">
           {message.explanationAfterSchema}
         </p>
       )}
 
-      {/* 2. SQL code block with explanation before and after */}
       {message.sql?.query && (
         <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
           <p className="text-xs font-medium text-muted-foreground px-3 py-2 border-b border-border">
@@ -120,7 +150,6 @@ export default function MessageBubble({ message }: { message: Message }) {
         </div>
       )}
 
-      {/* 3. Result table — lined design */}
       {results && results.columns.length > 0 && (
         <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
           <p className="text-xs font-medium text-muted-foreground px-3 py-2 border-b border-border">
@@ -153,7 +182,6 @@ export default function MessageBubble({ message }: { message: Message }) {
         </div>
       )}
 
-      {/* Action icons - only show when not streaming and has content */}
       {!message.isStreaming && message.content && (
         <div className="flex items-center gap-1 mt-1">
           <button
