@@ -1,6 +1,6 @@
 """Stage 5: SQL Generation"""
 import structlog
-from typing import Dict, Any
+from typing import Dict, Any, Optional, List
 
 from app.models.domain import (
     Context, SQLArtifact, SQLDialect, PerformanceMode
@@ -100,7 +100,8 @@ async def generate_sql(
     mode: PerformanceMode,
     llm_service: LLMService,
     model: str,
-    image_context: Any = None
+    image_context: Any = None,
+    lc_history: Optional[List] = None,
 ) -> SQLArtifact:
     """
     Generate SQL query using Claude API.
@@ -123,13 +124,22 @@ async def generate_sql(
     user_prompt = _build_user_prompt(user_message, context, image_context)
     
     try:
-        # Call LLM API (Claude or Gemini)
-        content = await llm_service.generate_sql(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            model=model,
-            max_tokens=2048
-        )
+        # Call LLM API — use history-aware path when prior turns are available
+        if lc_history is not None:
+            content = await llm_service.generate_sql_with_history(
+                system_prompt=system_prompt,
+                lc_history=lc_history,
+                user_prompt=user_prompt,
+                model=model,
+                max_tokens=2048,
+            )
+        else:
+            content = await llm_service.generate_sql(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                model=model,
+                max_tokens=2048,
+            )
         
         # Extract SQL query
         sql_query = ""

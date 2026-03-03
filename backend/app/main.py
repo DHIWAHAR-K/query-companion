@@ -34,7 +34,12 @@ async def lifespan(app: FastAPI):
     from app.db.mongo import mongo_db
     await mongo_db.connect()
     logger.info("MongoDB connected")
-    
+
+    # Compile LangGraph agent with MongoDB checkpointer
+    import app.core.agent.graph_runtime as _gr
+    from app.core.agent.graph_runtime import compile_agent_graph_with_checkpointer
+    _gr._compiled_graph = await compile_agent_graph_with_checkpointer()
+
     yield
     
     # Shutdown

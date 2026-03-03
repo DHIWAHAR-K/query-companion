@@ -14,6 +14,7 @@ from app.models.domain import (
     Column,
 )
 from app.core.agent.simulated_prompts import get_simulated_system_prompt
+from app.core.agent.lc_history_utils import domain_history_to_lc
 from app.services.llm_service import LLMService
 
 logger = structlog.get_logger()
@@ -181,8 +182,10 @@ async def process_simulated(
 
     llm = LLMService()
     model = llm.get_model_name("achillies")
-    raw = await llm.generate_sql(
+    lc_history = domain_history_to_lc(conversation_history)
+    raw = await llm.generate_sql_with_history(
         system_prompt=system_prompt,
+        lc_history=lc_history,
         user_prompt=user_prompt,
         model=model,
         max_tokens=4096,

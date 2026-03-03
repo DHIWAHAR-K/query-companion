@@ -1,8 +1,18 @@
 """LLM service - abstraction layer for multiple LLM providers"""
 import structlog
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from anthropic import AsyncAnthropic
 import google.generativeai as genai
+from langchain_core.messages import BaseMessage
+from langchain_core.language_models import BaseChatModel
+from langchain_anthropic import ChatAnthropic
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.prompts import (
+    ChatPromptTemplate,
+    SystemMessagePromptTemplate,
+    MessagesPlaceholder,
+    HumanMessagePromptTemplate,
+)
 
 from app.config import settings
 
@@ -235,6 +245,42 @@ class LLMService:
         
         return response_text, tool_calls
     
+    def get_lc_model(self, model_name: str) -> BaseChatModel:
+        """Return a LangChain chat model for the given model name."""
+        if self.provider == "anthropic":
+            return ChatAnthropic(
+                api_key=settings.ANTHROPIC_API_KEY,
+                model=model_name,
+                max_tokens=2048,
+            )
+        return ChatGoogleGenerativeAI(
+            google_api_key=settings.GOOGLE_API_KEY,
+            model=model_name,
+            max_output_tokens=2048,
+        )
+
+    async def generate_sql_with_history(
+        self,
+        system_prompt: str,
+        lc_history: List[BaseMessage],
+        user_prompt: str,
+        model: str,
+        max_tokens: int = 2048,
+    ) -> str:
+        """History-aware SQL generation using LangChain ChatPromptTemplate."""
+        prompt = ChatPromptTemplate.from_messages([
+            SystemMessagePromptTemplate.from_template("{system}"),
+            MessagesPlaceholder(variable_name="history"),
+            HumanMessagePromptTemplate.from_template("{question}"),
+        ])
+        chain = prompt | self.get_lc_model(model)
+        result = await chain.ainvoke({
+            "system": system_prompt,
+            "history": lc_history,
+            "question": user_prompt,
+        })
+        return result.content
+
     async def extract_from_image(
         self,
         image_data: bytes,

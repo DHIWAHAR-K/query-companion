@@ -5,6 +5,7 @@ import structlog
 from app.models.domain import (
     Message, PerformanceMode, AssistantMessage, SchemaTableUsed
 )
+from app.core.agent.lc_history_utils import domain_history_to_lc
 from app.models.database import Connection
 from app.core.agent.stages import (
     detect_language,
@@ -97,7 +98,9 @@ class AgentRuntime:
                 language=language
             )
             logger.debug("Context assembled", table_count=len(context.tables))
-            
+
+            lc_history = domain_history_to_lc(conversation_history)
+
             # Stage 3: Multimodal ingestion (if images attached)
             image_context = None
             if attachments:
@@ -125,8 +128,9 @@ class AgentRuntime:
                 tool_results=tool_results,
                 dialect=connection.type,
                 mode=self.mode,
-                client=self.client,
-                model=self.model
+                llm_service=self.llm_service,
+                model=self.model,
+                lc_history=lc_history,
             )
             logger.info("SQL generated", length=len(sql_generation.query))
             
@@ -280,7 +284,9 @@ class AgentRuntime:
                 "table_count": len(context.tables),
                 "tables": context.tables
             }
-            
+
+            lc_history = domain_history_to_lc(conversation_history)
+
             # Stage 4: Tool execution
             yield {"type": "stage_start", "stage": "tool_execution"}
             tool_results, tool_events = await execute_tools_with_claude(
@@ -309,7 +315,8 @@ class AgentRuntime:
                 dialect=connection.type,
                 mode=self.mode,
                 llm_service=self.llm_service,
-                model=self.model
+                model=self.model,
+                lc_history=lc_history,
             )
             yield {
                 "type": "sql_generated",

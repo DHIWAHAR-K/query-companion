@@ -2,6 +2,7 @@
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from typing import Optional
 import structlog
+from langgraph.checkpoint.mongodb.aio import AsyncMongoDBSaver
 
 from app.config import settings
 
@@ -59,7 +60,14 @@ class MongoDB:
         await cls.db.messages.create_index("conversation_id")
         await cls.db.messages.create_index([("conversation_id", 1), ("timestamp", 1)])
         await cls.db.messages.create_index("timestamp")
-        
+
+        # LangGraph checkpointer indexes
+        await cls.db.checkpoints.create_index("thread_id")
+        await cls.db.checkpoints.create_index(
+            [("thread_id", 1), ("checkpoint_id", 1)], unique=True
+        )
+        await cls.db.checkpoint_writes.create_index("thread_id")
+
         logger.info("MongoDB indexes created")
     
     @classmethod
@@ -73,6 +81,13 @@ class MongoDB:
     def get_collection(cls, name: str):
         """Get collection by name"""
         return cls.get_db()[name]
+
+    @classmethod
+    def get_langgraph_checkpointer(cls) -> AsyncMongoDBSaver:
+        """Return an AsyncMongoDBSaver for LangGraph state persistence."""
+        if cls.client is None:
+            raise RuntimeError("MongoDB not connected. Call MongoDB.connect() first.")
+        return AsyncMongoDBSaver(cls.client[settings.MONGODB_DB_NAME])
 
 
 # Convenience accessors
