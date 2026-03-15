@@ -149,7 +149,7 @@ async def assemble_context(
         language=language,
         db_schema=schema,
         tables=table_names,
-        conversation_history=conversation_history[-5:]  # Last 5 messages for context
+        conversation_history=conversation_history[-10:]  # Last 10 messages (matches MongoDB fetch limit)
     )
     
     logger.debug("Context assembled", table_count=len(table_names))
