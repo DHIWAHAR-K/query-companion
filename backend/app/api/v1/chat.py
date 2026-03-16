@@ -86,6 +86,58 @@ async def _get_connection_for_request(connection_id, user_id, db):
     return None
 
 
+def _build_history_from_docs(message_docs, connection=None) -> list:
+    """Build domain Message list from MongoDB MessageDocument list.
+
+    Enriches assistant messages with the SQL artifact stored in their metadata so
+    that ``domain_history_to_lc`` can include the exact SQL in follow-up turns,
+    giving the LLM concrete context rather than forcing it to infer from prose.
+
+    Args:
+        message_docs: List of MessageDocument objects from MongoDB.
+        connection: The active Connection object, used to determine the SQL dialect
+            for reconstructing SQLArtifact. Falls back to PostgreSQL if absent.
+
+    Returns:
+        List of domain Message objects ready for pipeline consumption.
+    """
+    from app.models.domain import SQLArtifact
+    from app.models.domain import SQLDialect as DomainSQLDialect
+
+    # Derive dialect string from the connection (safe default: postgresql)
+    dialect_value = "postgresql"
+    if connection is not None:
+        try:
+            dialect_value = str(connection.type.value)
+        except AttributeError:
+            pass
+
+    history = []
+    for msg_doc in message_docs:
+        sql_artifact = None
+        if msg_doc.role == "assistant" and msg_doc.metadata:
+            sql_query = msg_doc.metadata.get("sql_query")
+            if sql_query:
+                try:
+                    sql_artifact = SQLArtifact(
+                        query=sql_query,
+                        dialect=DomainSQLDialect(dialect_value),
+                        explanation=msg_doc.metadata.get("explanation") or "",
+                    )
+                except Exception:
+                    # Never let malformed metadata break history loading
+                    pass
+        history.append(Message(
+            id=msg_doc.message_id,
+            role=msg_doc.role,
+            content=msg_doc.content,
+            timestamp=msg_doc.timestamp,
+            sql=sql_artifact,
+        ))
+
+    return history
+
+
 def _demo_connection(user_id: str):
     """In-memory connection object for demo mode (text-to-SQL only, no real DB)."""
     return SimpleNamespace(
