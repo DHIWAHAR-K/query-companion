@@ -195,17 +195,10 @@ async def send_message(
         conversation_id=request.conversation_id,
         limit=10  # Last 10 messages for context
     )
-    
-    # Convert to domain Message objects
-    history = []
-    for msg_doc in message_docs:
-        history.append(Message(
-            id=msg_doc.message_id,
-            role=msg_doc.role,
-            content=msg_doc.content,
-            timestamp=msg_doc.timestamp
-        ))
-    
+
+    # Convert to enriched domain Message objects (includes SQL from metadata)
+    history = _build_history_from_docs(message_docs, connection)
+
     try:
         if getattr(connection, "id", None) == DEMO_CONNECTION_ID:
             # Simulated DB: dual-mode (plan/code) with conversation schema memory
