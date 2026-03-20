@@ -5,12 +5,18 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from app.models.domain import Message
 
 
-def domain_history_to_lc(messages: List[Message]) -> List[BaseMessage]:
+def domain_history_to_lc(
+    messages: List[Message],
+    include_sql: bool = True,
+) -> List[BaseMessage]:
     """Convert domain Message objects to LangChain BaseMessage objects."""
     result: List[BaseMessage] = []
     for msg in messages:
         if msg.role == "user":
             result.append(HumanMessage(content=msg.content))
         elif msg.role == "assistant":
-            result.append(AIMessage(content=msg.content))
+            parts = [msg.content]
+            if include_sql and msg.sql and msg.sql.query:
+                parts.append(f"\nSQL generated:\n```sql\n{msg.sql.query}\n```")
+            result.append(AIMessage(content="\n".join(parts)))
     return result
