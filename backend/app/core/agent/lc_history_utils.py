@@ -10,7 +10,18 @@ def domain_history_to_lc(
     include_sql: bool = True,
     include_results: bool = True,
 ) -> List[BaseMessage]:
-    """Convert domain Message objects to LangChain BaseMessage objects."""
+    """Convert domain Message objects to LangChain BaseMessage objects.
+
+    Args:
+        messages: Domain Message objects from conversation history.
+        include_sql: When True, appends the generated SQL query to assistant
+            messages so the LLM can reference the exact query in follow-up turns.
+        include_results: When True, appends a row-count summary to assistant
+            messages so the LLM knows whether the prior query returned data.
+
+    Returns:
+        List of LangChain BaseMessage objects ready for MessagesPlaceholder injection.
+    """
     result: List[BaseMessage] = []
     for msg in messages:
         if msg.role == "user":
